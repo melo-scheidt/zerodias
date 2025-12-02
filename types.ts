@@ -81,6 +81,23 @@ export interface Resistencias {
   medo: number;
 }
 
+// Novos campos para ficha completa (Kratos Style)
+export interface Ataque {
+  nome: string;
+  teste: string;
+  dano: string;
+  critico: string;
+  alcance: string;
+  especial: string;
+}
+
+export interface Habilidade {
+  nome: string;
+  custo: string;
+  pagina?: string;
+  descricao: string;
+}
+
 export interface Agente {
   id: string; // Identificador único obrigatório
   ownerId?: string; // ID do usuário dono da ficha
@@ -90,9 +107,19 @@ export interface Agente {
   trilha: string;
   nex: number;
   patente: string;
+  
   atributos: Atributos;
   status: Status;
   pericias: Pericia[];
+  
+  // Novos Campos
+  defesa: number;
+  protecao: string; // Equipamentos de proteção
+  deslocamento: string;
+  
+  ataques: Ataque[];
+  habilidades: Habilidade[];
+
   inventario: string;
   detalhes: string;
   imagem?: string; // URL ou Base64 da imagem do personagem
@@ -103,6 +130,7 @@ export interface Agente {
 export interface Token {
   id: string;
   label: string;
+  image?: string; // Imagem do token
   x: number;
   y: number;
   color: string;
@@ -125,6 +153,12 @@ export interface Jogador {
   status: 'Online' | 'Offline';
 }
 
+export interface MapState {
+  bgImage: string | null;
+  tokens: Token[];
+  timestamp: number; // Para forçar atualização
+}
+
 export interface Campanha {
   id: string; // Código de acesso (ex: OP-7X21)
   nome: string;
@@ -132,4 +166,13 @@ export interface Campanha {
   mestre: string;
   jogadores: Jogador[];
   dataCriacao: number;
+  mapState?: MapState; // Estado compartilhado da mesa tática
+}
+
+export interface LibraryDocument {
+  id: string;
+  title: string;
+  url: string;
+  type: 'link' | 'local'; // link = salvo no banco, local = blob temporário
+  addedBy?: string;
 }

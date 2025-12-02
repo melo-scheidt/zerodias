@@ -115,11 +115,13 @@ export const generateRandomAgent = async (): Promise<Partial<Agente> | null> => 
            "sanAtual": number, "sanMax": number,
            "peAtual": number, "peMax": number
         },
+        "ataques": [ { "nome": "Arma", "teste": "2d20+5", "dano": "1d8", "critico": "19", "alcance": "Curto", "especial": "" } ],
+        "habilidades": [ { "nome": "Habilidade", "custo": "1 PE", "descricao": "Efeito..." } ],
         "inventario": "String descrevendo itens iniciais e uma arma",
         "detalhes": "Breve background sombrio ou traumático de 2 frases"
       }
       
-      Distribua os atributos de forma lógica para a classe (Total de pontos de atributo: 5 a 10).
+      Distribua os atributos de forma lógica para a classe.
     `;
 
     const response = await ai.models.generateContent({
@@ -141,31 +143,85 @@ export const generateRandomAgent = async (): Promise<Partial<Agente> | null> => 
   }
 };
 
-export const generateCharacterPortrait = async (description: string, className: string): Promise<string | null> => {
-  try {
-    const prompt = `A highly detailed, cinematic character portrait of a ${className} from a modern dark fantasy horror RPG (Ordem Paranormal style).
-    Dark atmosphere, dramatic lighting, gritty texture.
-    Character Description: ${description}.
-    The character is facing the camera, serious expression. High quality, digital art.`;
+export const generateCharacterPortrait = async (description: string, classe: string): Promise<string | null> => {
+    try {
+        const prompt = `Retrato de personagem de RPG de terror moderno (Ordem Paranormal).
+        Classe: ${classe}.
+        Descrição: ${description}.
+        Estilo: Arte digital sombria, realista, iluminação dramática, estilo 'Manhunt' ou 'Dark Investigations'.
+        Fundo escuro e neutro.`;
 
-    const response = await ai.models.generateImages({
-      model: 'imagen-4.0-generate-001',
-      prompt: prompt,
-      config: {
-        numberOfImages: 1,
-        outputMimeType: 'image/jpeg',
-        aspectRatio: '1:1',
-      },
-    });
+        const response = await ai.models.generateContent({
+            model: 'gemini-2.5-flash-image',
+            contents: {
+                parts: [{ text: prompt }]
+            }
+        });
 
-    const base64Data = response.generatedImages?.[0]?.image?.imageBytes;
-    if (base64Data) {
-      return `data:image/jpeg;base64,${base64Data}`;
+        if (response.candidates?.[0]?.content?.parts) {
+            for (const part of response.candidates[0].content.parts) {
+                if (part.inlineData && part.inlineData.data) {
+                    return `data:${part.inlineData.mimeType || 'image/png'};base64,${part.inlineData.data}`;
+                }
+            }
+        }
+        return null;
+    } catch (error) {
+        console.error("Erro ao gerar imagem:", error);
+        return null;
     }
-    return null;
+};
 
-  } catch (error) {
-    console.error("Erro ao gerar imagem:", error);
-    return null;
-  }
+export const parseAgentFromPdf = async (base64Data: string, mimeType: string = 'image/png'): Promise<Partial<Agente> | null> => {
+    try {
+        const prompt = `
+            Você é um especialista em RPG Ordem Paranormal. 
+            Analise este documento (que pode ser um PDF ou imagem de uma ficha de personagem).
+            Extraia TODOS os dados possíveis e retorne um JSON compatível com a seguinte estrutura.
+            Se um valor não estiver visível, deixe em branco ou 0.
+            
+            Estrutura JSON esperada:
+            {
+              "nome": "string",
+              "origem": "string",
+              "classe": "Combatente" | "Especialista" | "Ocultista",
+              "trilha": "string",
+              "nex": number,
+              "patente": "string",
+              "atributos": { "agi": number, "for": number, "int": number, "pre": number, "vig": number },
+              "status": { "pvAtual": number, "pvMax": number, "sanAtual": number, "sanMax": number, "peAtual": number, "peMax": number },
+              "defesa": number,
+              "deslocamento": "string",
+              "protecao": "string",
+              "pericias": [ { "nome": "string", "treinamento": "Destreinado" | "Treinado" | "Veterano" | "Expert", "bonus": number } ],
+              "ataques": [ { "nome": "string", "teste": "string", "dano": "string", "critico": "string", "alcance": "string", "especial": "string" } ],
+              "habilidades": [ { "nome": "string", "custo": "string", "descricao": "string" } ],
+              "inventario": "string",
+              "detalhes": "string"
+            }
+        `;
+
+        const response = await ai.models.generateContent({
+            model: 'gemini-2.5-flash',
+            contents: [
+                { text: prompt },
+                {
+                    inlineData: {
+                        mimeType: mimeType,
+                        data: base64Data
+                    }
+                }
+            ],
+            config: {
+                responseMimeType: "application/json"
+            }
+        });
+
+        const text = response.text;
+        if (!text) return null;
+        return JSON.parse(text);
+    } catch (error) {
+        console.error("Gemini PDF/Image Parse Error", error);
+        return null;
+    }
 };

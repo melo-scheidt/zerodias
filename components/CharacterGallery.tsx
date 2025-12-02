@@ -1,5 +1,5 @@
 
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { Agente } from '../types';
 import { Icons, INITIAL_SKILLS } from '../constants';
 import { generateRandomAgent } from '../services/geminiService';
@@ -13,6 +13,7 @@ interface CharacterGalleryProps {
 
 export const CharacterGallery: React.FC<CharacterGalleryProps> = ({ agents, onSelectAgent, onAddAgent, onDeleteAgent }) => {
   const [loading, setLoading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleCreateAI = async () => {
     setLoading(true);
@@ -30,6 +31,13 @@ export const CharacterGallery: React.FC<CharacterGalleryProps> = ({ agents, onSe
         atributos: partialAgent.atributos || { agi: 1, for: 1, int: 1, pre: 1, vig: 1 },
         status: partialAgent.status || { pvAtual: 20, pvMax: 20, sanAtual: 20, sanMax: 20, peAtual: 5, peMax: 5 },
         pericias: JSON.parse(JSON.stringify(INITIAL_SKILLS)),
+        
+        defesa: 10,
+        protecao: '',
+        deslocamento: '9m',
+        ataques: [],
+        habilidades: [],
+        
         inventario: partialAgent.inventario || '',
         detalhes: partialAgent.detalhes || ''
       };
@@ -52,10 +60,57 @@ export const CharacterGallery: React.FC<CharacterGalleryProps> = ({ agents, onSe
         atributos: { agi: 1, for: 1, int: 1, pre: 1, vig: 1 },
         status: { pvAtual: 20, pvMax: 20, sanAtual: 20, sanMax: 20, peAtual: 5, peMax: 5 },
         pericias: JSON.parse(JSON.stringify(INITIAL_SKILLS)),
+        
+        defesa: 10,
+        protecao: '',
+        deslocamento: '9m',
+        ataques: [],
+        habilidades: [],
+
         inventario: '',
         detalhes: ''
       };
       onAddAgent(newAgent);
+  };
+
+  const handleImportAgent = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    // Fix for crash: Validating file type
+    if (file.type === 'application/pdf') {
+        alert("⚠️ ERRO: Você tentou enviar um PDF para o carregador de Fichas (JSON).\n\nPara ler PDFs, use a aba 'Biblioteca' na barra lateral.");
+        if (fileInputRef.current) fileInputRef.current.value = '';
+        return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+        try {
+            const content = ev.target?.result as string;
+            const importedAgent = JSON.parse(content);
+
+            // Validação básica
+            if (!importedAgent.nome || !importedAgent.atributos || !importedAgent.status) {
+                throw new Error("Arquivo inválido: Estrutura de agente não reconhecida.");
+            }
+
+            // Garante um novo ID para evitar conflitos
+            const newAgent: Agente = {
+                ...importedAgent,
+                id: Date.now().toString()
+            };
+
+            onAddAgent(newAgent);
+            alert(`Agente ${newAgent.nome} importado com sucesso.`);
+        } catch (error) {
+            alert("Erro ao importar ficha. Certifique-se de que é um arquivo .json válido (backup do sistema), não um PDF.");
+            console.error(error);
+        } finally {
+            if (fileInputRef.current) fileInputRef.current.value = '';
+        }
+    };
+    reader.readAsText(file);
   };
 
   return (
@@ -68,6 +123,20 @@ export const CharacterGallery: React.FC<CharacterGalleryProps> = ({ agents, onSe
                 <p className="font-mono text-zinc-500 text-xs">Acesso Restrito: Nível 2+</p>
             </div>
             <div className="flex gap-4">
+                <button 
+                    onClick={() => fileInputRef.current?.click()}
+                    className="flex items-center gap-2 border border-zinc-700 text-zinc-400 hover:text-white px-4 py-2 rounded font-mono text-xs uppercase hover:bg-zinc-800 transition-colors"
+                >
+                    <Icons.Upload /> Carregar Ficha (.json)
+                </button>
+                <input 
+                    type="file" 
+                    ref={fileInputRef} 
+                    className="hidden" 
+                    accept=".json" 
+                    onChange={handleImportAgent} 
+                />
+
                 <button 
                     onClick={handleCreateManual}
                     className="flex items-center gap-2 border border-zinc-700 text-zinc-400 hover:text-white px-4 py-2 rounded font-mono text-xs uppercase hover:bg-zinc-800 transition-colors"
@@ -104,8 +173,12 @@ export const CharacterGallery: React.FC<CharacterGalleryProps> = ({ agents, onSe
                             
                             <div className="p-5 space-y-4">
                                 <div className="flex justify-between items-start">
-                                    <div className="w-12 h-12 bg-zinc-900 border border-zinc-700 flex items-center justify-center text-zinc-500">
-                                        <Icons.Ghost />
+                                    <div className="w-12 h-12 bg-zinc-900 border border-zinc-700 flex items-center justify-center text-zinc-500 overflow-hidden">
+                                        {agent.imagem ? (
+                                            <img src={agent.imagem} className="w-full h-full object-cover" alt="Avatar" />
+                                        ) : (
+                                            <Icons.Ghost />
+                                        )}
                                     </div>
                                     <div className="text-right">
                                         <div className="text-2xl font-bold text-white font-mono">{agent.nex}%</div>

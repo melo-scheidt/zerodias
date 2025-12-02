@@ -10,18 +10,14 @@ import { CampaignManager } from './components/CampaignManager';
 import { CharacterGallery } from './components/CharacterGallery';
 import { MechanicsReference } from './components/MechanicsReference';
 import { Settings } from './components/Settings';
+import { PdfLibrary } from './components/PdfLibrary';
+import { LoginScreen } from './components/LoginScreen';
 import { db } from './services/databaseService';
 
-// Usuário padrão com acesso total (Admin/Mestre)
-const DEFAULT_USER: User = {
-    id: 'operator',
-    username: 'Operador',
-    role: 'admin'
-};
-
 const App: React.FC = () => {
-  const [currentUser, setCurrentUser] = useState<User>(DEFAULT_USER);
-  const [activeTab, setActiveTab] = useState<'gallery' | 'ficha' | 'mapa' | 'dados' | 'ia' | 'campanha' | 'regras' | 'config'>('gallery');
+  // Estado inicial do usuário é null (deslogado)
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [activeTab, setActiveTab] = useState<'gallery' | 'ficha' | 'mapa' | 'dados' | 'ia' | 'campanha' | 'regras' | 'pdfs' | 'config'>('gallery');
   const [currentCampaign, setCurrentCampaign] = useState<Campanha | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   
@@ -41,6 +37,13 @@ const App: React.FC = () => {
       peAtual: 2, peMax: 2
     },
     pericias: JSON.parse(JSON.stringify(INITIAL_SKILLS)),
+    
+    defesa: 10,
+    protecao: 'Nenhuma',
+    deslocamento: '9m',
+    ataques: [],
+    habilidades: [],
+
     inventario: '',
     detalhes: '',
     imagem: '',
@@ -66,35 +69,39 @@ const App: React.FC = () => {
   // Ref para controlar debounce de salvamento
   const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Initial Load (Session & Data)
+  // Initial Load (Data) - Executa após login
   useEffect(() => {
-    const loadSystem = async () => {
-      setIsLoading(true);
-      try {
-         // Define usuário padrão e carrega todos os dados
-         setCurrentUser(DEFAULT_USER);
-         await loadData();
-      } catch (error) {
-        console.error("System Boot Error:", error);
-      } finally {
-        setIsLoading(false);
-      }
-    };
-    loadSystem();
-  }, []);
+    if (currentUser) {
+        const loadSystem = async () => {
+          setIsLoading(true);
+          try {
+             await loadData();
+          } catch (error) {
+            console.error("System Boot Error:", error);
+          } finally {
+            setIsLoading(false);
+          }
+        };
+        loadSystem();
+    } else {
+        setIsLoading(false); // Para mostrar a tela de login
+    }
+  }, [currentUser]);
 
   const loadData = async () => {
       // Carrega TODOS os agentes do banco (sem filtro de ID)
       const agents = await db.listAgents();
       
-      // Migração de segurança: Garante IDs, Obliquo e Resistencias
+      // Migração de segurança: Garante IDs, Obliquo e Resistencias e Novos Campos
       const defaultAgente = createDefaultAgent();
       const validatedAgents = agents.map(a => ({
         ...defaultAgente, 
         ...a,
         id: a.id || Math.random().toString(36).substr(2, 9),
         obliquo: { ...defaultAgente.obliquo, ...a.obliquo },
-        resistencias: { ...defaultAgente.resistencias, ...a.resistencias }
+        resistencias: { ...defaultAgente.resistencias, ...a.resistencias },
+        ataques: a.ataques || [],
+        habilidades: a.habilidades || []
       }));
 
       setSavedAgents(validatedAgents);
@@ -127,203 +134,233 @@ const App: React.FC = () => {
       return prevList;
     });
 
-    if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
-    saveTimeoutRef.current = setTimeout(() => {
-      db.saveAgent(agente).catch(err => console.error("Falha no auto-save:", err));
-    }, 1000);
+    if (saveTimeoutRef.current) {
+      clearTimeout(saveTimeoutRef.current);
+    }
+
+    saveTimeoutRef.current = setTimeout(async () => {
+      await db.saveAgent(agente);
+    }, 2000);
 
     return () => {
       if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
     };
-  }, [agente, isLoading, currentUser]);
-
-  const handleAttributeRoll = (attrName: string, value: number) => {
-    setActiveTab('dados');
-  };
+  }, [agente, currentUser, isLoading]);
 
   const handleSelectAgent = (selected: Agente) => {
-    const defaultAgente = createDefaultAgent();
-    // Garante merge profundo ao selecionar
-    const mergedAgent = {
-        ...defaultAgente,
-        ...selected,
-        obliquo: { ...defaultAgente.obliquo, ...selected.obliquo },
-        resistencias: { ...defaultAgente.resistencias, ...selected.resistencias }
-    };
-    
-    if (agente && agente.id) db.saveAgent(agente);
-    setAgente(mergedAgent);
+    setAgente(selected);
     setActiveTab('ficha');
   };
 
-  const handleAddAgent = async (newAgent: Agente) => {
-    const agentWithId = { 
-        ...newAgent, 
-        id: newAgent.id || Date.now().toString(),
-        ownerId: currentUser?.id 
-    };
-    
-    setSavedAgents(prev => [...prev, agentWithId]);
-    setAgente(agentWithId);
+  const handleAddAgent = (newAgent: Agente) => {
+    setAgente(newAgent);
+    setSavedAgents(prev => [...prev, newAgent]);
+    db.saveAgent(newAgent);
     setActiveTab('ficha');
-    await db.saveAgent(agentWithId);
+  };
+  
+  const handleDeleteAgent = async (agentId: string) => {
+      if(confirm("ATENÇÃO: A exclusão é permanente. Confirmar protocolo de expurgo?")) {
+          await db.deleteAgent(agentId);
+          const newList = savedAgents.filter(a => a.id !== agentId);
+          setSavedAgents(newList);
+          if (agente.id === agentId) {
+             const next = newList.length > 0 ? newList[0] : createDefaultAgent();
+             setAgente(next);
+             if (newList.length === 0) db.saveAgent(next);
+          }
+      }
   };
 
-  const handleDeleteAgent = async (id: string) => {
-    const newList = savedAgents.filter(a => a.id !== id);
-    setSavedAgents(newList);
-    await db.deleteAgent(id);
-    
-    if (agente.id === id) {
-        if (newList.length > 0) {
-            setAgente(newList[0]);
-        } else {
-            const newDefault = createDefaultAgent();
-            await db.saveAgent(newDefault);
-            setSavedAgents([newDefault]);
-            setAgente(newDefault);
-        }
-    }
+  const handleAttributeRoll = (attrName: string, value: number) => {
+      const result: DiceResult = {
+          diceType: 20,
+          rolls: Array(value <= 0 ? 2 : value).fill(0).map(() => Math.floor(Math.random() * 20) + 1),
+          final: 0,
+          timestamp: Date.now(),
+          isAttributeRoll: true
+      };
+      
+      if (value <= 0) {
+          result.final = Math.min(...result.rolls);
+      } else {
+          result.final = Math.max(...result.rolls);
+      }
+      
+      setDiceHistory(prev => [result, ...prev].slice(0, 50));
+      setActiveTab('dados');
   };
 
+  const handleLogout = () => {
+      setCurrentUser(null);
+      // Opcional: Limpar estados ou fazer db.disconnect()
+  };
+
+  if (!currentUser) {
+      return <LoginScreen onLoginSuccess={(user) => setCurrentUser(user)} />;
+  }
+
+  // Define os itens do menu lateral com base na permissão do usuário
   const menuItems = [
-    { id: 'campanha', label: 'Missão', icon: Icons.Radio },
-    { id: 'gallery', label: 'Agentes', icon: Icons.Users },
-    { id: 'ficha', label: 'Dossiê', icon: Icons.FileText },
-    { id: 'dados', label: 'Dados', icon: Icons.Dices },
-    { id: 'mapa', label: 'Tático', icon: Icons.Map },
-    { id: 'regras', label: 'Arquivos', icon: Icons.Book },
-    { id: 'ia', label: 'C.R.I.S.', icon: Icons.Ghost },
-    { id: 'config', label: 'Configurações', icon: Icons.Settings },
+      { id: 'gallery', label: 'Agentes', icon: Icons.Users },
+      { id: 'ficha', label: 'Dossiê', icon: Icons.FileText },
+      { id: 'campanha', label: 'Missão', icon: Icons.Radio },
+      { id: 'dados', label: 'Dados', icon: Icons.Dices },
+      { id: 'mapa', label: 'Tático', icon: Icons.Map },
+      { id: 'regras', label: 'Arquivos', icon: Icons.Book },
+      { id: 'pdfs', label: 'Biblioteca', icon: Icons.Pdf },
   ];
 
-  if (isLoading) {
-      return (
-          <div className="flex h-screen w-screen bg-black items-center justify-center flex-col text-ordem-gold font-mono">
-              <div className="w-12 h-12 border-4 border-ordem-gold border-t-transparent rounded-full animate-spin mb-4"></div>
-              <div className="animate-pulse tracking-widest">INICIALIZANDO SISTEMA...</div>
-          </div>
-      )
+  // Adiciona itens restritos apenas para Admins
+  if (currentUser.role === 'admin') {
+      menuItems.push({ id: 'ia', label: 'C.R.I.S.', icon: Icons.Ghost });
+      menuItems.push({ id: 'config', label: 'Configurações', icon: Icons.Settings });
   }
 
   return (
-    <div className="flex h-screen bg-ordem-black text-gray-300 font-sans overflow-hidden relative z-10">
+    <div className="flex h-screen bg-black text-white font-sans overflow-hidden relative">
       
-      {/* Sidebar Navigation */}
-      <aside className="w-20 md:w-64 bg-ordem-panel border-r border-ordem-border flex flex-col relative z-20 shadow-[10px_0_30px_rgba(0,0,0,0.5)]">
-        
-        {/* Logo / Header */}
-        <div className="h-24 flex items-center justify-center border-b border-ordem-border bg-black/40 relative overflow-hidden group">
-           <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-10"></div>
-           <div className="relative z-10 flex flex-col items-center">
-             <div className="text-4xl font-display text-ordem-gold drop-shadow-md tracking-wider">OP</div>
-             <div className="text-[10px] tracking-[0.3em] text-zinc-500 uppercase mt-1 group-hover:text-ordem-gold transition-colors">Ordem Paranormal</div>
+      {/* Sidebar (HUD Lateral) */}
+      <aside className="w-20 lg:w-64 bg-zinc-950 border-r border-zinc-800 flex flex-col justify-between shrink-0 relative z-20">
+        <div>
+           {/* Header Logo */}
+           <div className="p-6 flex items-center gap-3 border-b border-zinc-800">
+              <div className="w-8 h-8 rounded-full border border-ordem-gold flex items-center justify-center bg-ordem-gold/10 animate-pulse-slow">
+                 <span className="font-display text-ordem-gold text-xs">OP</span>
+              </div>
+              <h1 className="font-display text-xl tracking-widest hidden lg:block text-glow">ORDEM</h1>
            </div>
-        </div>
 
-        {/* User Info Card */}
-        <div className="p-4 border-b border-zinc-800 bg-zinc-900/50">
-             <div className="flex items-center gap-3">
-                 <div className="w-8 h-8 rounded border border-ordem-blood text-ordem-red bg-red-900/20 flex items-center justify-center text-xs font-bold uppercase">
-                     OP
-                 </div>
-                 <div className="flex-1 overflow-hidden">
-                     <div className="text-sm font-display text-white truncate uppercase">{currentUser.username}</div>
-                     <div className="text-[10px] font-mono uppercase text-ordem-red">
-                         Acesso: Mestre
-                     </div>
-                 </div>
-             </div>
-        </div>
+           {/* User Status */}
+           <div className="p-4 border-b border-zinc-800 bg-zinc-900/30 hidden lg:block">
+               <div className="flex items-center gap-2">
+                   <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></div>
+                   <span className="text-xs font-mono uppercase text-zinc-400">
+                       {currentUser.role === 'admin' ? 'Acesso Mestre' : 'Acesso Agente'}
+                   </span>
+               </div>
+               <div className="text-sm font-bold text-white truncate">{currentUser.username}</div>
+           </div>
 
-        {/* Navigation */}
-        <nav className="flex-1 py-6 space-y-2 px-3 overflow-y-auto custom-scrollbar">
-          {menuItems.map((item) => {
-            const isActive = activeTab === item.id;
-            return (
-              <button
-                key={item.id}
-                onClick={() => setActiveTab(item.id as any)}
-                className={`w-full flex items-center gap-4 px-4 py-3 rounded-md transition-all duration-300 group relative overflow-hidden border ${isActive ? 'bg-ordem-gold/10 border-ordem-gold/30 text-ordem-gold' : 'border-transparent text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200'}`}
-              >
-                {isActive && <div className="absolute left-0 top-0 bottom-0 w-1 bg-ordem-gold shadow-[0_0_10px_#d4b483]"></div>}
-                <span className={`transition-transform duration-300 ${isActive ? 'scale-110 drop-shadow-[0_0_5px_rgba(212,180,131,0.5)]' : 'group-hover:scale-110'}`}>
+           {/* Navigation */}
+           <nav className="flex flex-col gap-1 p-2">
+              {menuItems.map(item => (
+                <button 
+                  key={item.id}
+                  onClick={() => setActiveTab(item.id as any)}
+                  className={`flex items-center gap-3 p-3 rounded transition-all duration-300 group ${activeTab === item.id ? 'bg-ordem-blood text-white shadow-[0_0_15px_rgba(239,68,68,0.4)]' : 'text-zinc-500 hover:text-white hover:bg-zinc-900'}`}
+                >
                   <item.icon />
-                </span>
-                <span className={`font-mono text-sm uppercase tracking-wider hidden md:block ${isActive ? 'font-bold' : ''}`}>
-                  {item.label}
-                </span>
-              </button>
-            )
-          })}
-        </nav>
+                  <span className="hidden lg:block font-mono text-xs uppercase tracking-wider">{item.label}</span>
+                  {activeTab === item.id && <div className="ml-auto w-1 h-1 bg-white rounded-full hidden lg:block"></div>}
+                </button>
+              ))}
+           </nav>
+        </div>
 
-        {/* Footer Info */}
-        <div className="p-4 border-t border-ordem-border bg-black/20 text-center md:text-left">
-           <div className="text-[10px] text-zinc-600 font-mono uppercase flex items-center gap-2 justify-center md:justify-start">
-             <span className={`w-2 h-2 rounded-full ${db.getStatus() ? 'bg-green-500 animate-pulse' : 'bg-red-500'}`}></span>
-             <span className="hidden md:inline">{db.getStatus() ? 'DB: ONLINE' : 'DB: OFFLINE'}</span>
-           </div>
+        {/* Footer Actions */}
+        <div className="p-2 border-t border-zinc-800 space-y-2">
+            <button 
+                onClick={handleLogout}
+                className="w-full flex items-center justify-center lg:justify-start gap-3 p-3 text-zinc-600 hover:text-red-500 hover:bg-red-900/10 rounded transition-colors"
+                title="Desconectar"
+            >
+                <Icons.WifiOff />
+                <span className="hidden lg:block font-mono text-xs uppercase">Sair</span>
+            </button>
         </div>
       </aside>
 
-      {/* Main Content Area */}
-      <main className="flex-1 overflow-hidden relative p-4 md:p-6">
-         {/* Top CRT Scanline & Effects are global in index.html, but we add a local container effect */}
-         <div className="absolute inset-0 bg-black/50 pointer-events-none z-0"></div>
-         
-         {/* Tab Content */}
-         <div className="h-full relative z-10">
-            {activeTab === 'gallery' && (
-                <CharacterGallery 
+      {/* Main Content Area (Tático) */}
+      <main className="flex-1 bg-black relative flex flex-col overflow-hidden">
+        
+        {/* Top Status Bar (HUD) */}
+        <header className="h-12 bg-zinc-950 border-b border-zinc-800 flex items-center justify-between px-6 shrink-0 relative z-10">
+           <div className="flex items-center gap-4 text-[10px] font-mono text-zinc-500 uppercase">
+              <span>SISTEMA: ONLINE</span>
+              <span className="hidden md:inline">|</span>
+              <span className="hidden md:inline">LATÊNCIA: 12ms</span>
+              <span className="hidden md:inline">|</span>
+              <span className="text-ordem-gold">{new Date().toLocaleDateString()}</span>
+           </div>
+           <div className="text-[10px] font-mono text-zinc-600 uppercase">
+               Versão 2.4.1 // Protocolo C.R.I.S. Ativo
+           </div>
+        </header>
+
+        {/* Dynamic Content View */}
+        <div className="flex-1 overflow-hidden p-1 relative">
+           
+           {/* Background Grid/Effect */}
+           <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.02)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.02)_1px,transparent_1px)] bg-[size:50px_50px] pointer-events-none"></div>
+
+           <div className="relative z-10 w-full h-full p-4">
+              {activeTab === 'gallery' && (
+                  <CharacterGallery 
                     agents={savedAgents} 
                     onSelectAgent={handleSelectAgent} 
                     onAddAgent={handleAddAgent}
                     onDeleteAgent={handleDeleteAgent}
-                />
-            )}
-            {activeTab === 'ficha' && (
-                <CharacterSheet 
+                  />
+              )}
+              
+              {activeTab === 'ficha' && (
+                  <CharacterSheet 
                     agente={agente} 
                     setAgente={setAgente} 
                     onAttributeRoll={handleAttributeRoll}
-                />
-            )}
-            {activeTab === 'dados' && (
-                <DiceRoller history={diceHistory} setHistory={setDiceHistory} />
-            )}
-            {activeTab === 'mapa' && (
-                <MapExplorer />
-            )}
-            {activeTab === 'ia' && (
-                <InvestigatorAssistant 
-                    agents={savedAgents}
-                    onDeleteAgent={handleDeleteAgent}
-                />
-            )}
-            {activeTab === 'campanha' && (
-                <CampaignManager 
+                  />
+              )}
+
+              {activeTab === 'mapa' && (
+                  <MapExplorer 
+                    savedAgents={savedAgents} 
                     currentCampaign={currentCampaign}
-                    setCurrentCampaign={(c) => {
-                        setCurrentCampaign(c);
-                        if (c) db.saveCampaign(c);
-                        else db.deleteCampaign();
-                    }}
+                    currentUser={currentUser}
+                    onUpdateCampaign={(c) => { setCurrentCampaign(c); db.saveCampaign(c); }}
+                  />
+              )}
+              
+              {activeTab === 'dados' && (
+                  <DiceRoller history={diceHistory} setHistory={setDiceHistory} />
+              )}
+              
+              {/* IA Restrita */}
+              {activeTab === 'ia' && currentUser.role === 'admin' && (
+                  <InvestigatorAssistant 
+                     agents={savedAgents} 
+                     onDeleteAgent={handleDeleteAgent}
+                     onAddAgent={handleAddAgent}
+                  />
+              )}
+
+              {activeTab === 'campanha' && (
+                  <CampaignManager 
+                    currentCampaign={currentCampaign} 
+                    setCurrentCampaign={(c) => { setCurrentCampaign(c); if(c) db.saveCampaign(c); else db.deleteCampaign(); }}
                     playerAgent={agente}
                     currentUser={currentUser}
-                />
-            )}
-            {activeTab === 'regras' && (
-                <MechanicsReference />
-            )}
-            {activeTab === 'config' && (
-                <Settings />
-            )}
-         </div>
+                  />
+              )}
+
+              {activeTab === 'regras' && (
+                  <MechanicsReference />
+              )}
+              
+              {activeTab === 'pdfs' && (
+                  <PdfLibrary />
+              )}
+
+              {/* Config Restrita */}
+              {activeTab === 'config' && currentUser.role === 'admin' && (
+                  <Settings />
+              )}
+           </div>
+        </div>
       </main>
+
     </div>
   );
 };
 
 export default App;
-    

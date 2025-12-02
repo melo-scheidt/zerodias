@@ -1,5 +1,5 @@
 
-import React, { useState, useRef } from 'react';
+import React, { useState } from 'react';
 import { User, UserRole } from '../types';
 import { db } from '../services/databaseService';
 import { Icons } from '../constants';
@@ -16,9 +16,6 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
   const [adminKey, setAdminKey] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-
-  // Ref para o input de arquivo oculto
-  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Chave secreta para criar conta de Mestre/Admin
   const MASTER_KEY_REQUIRED = "orate_studio";
@@ -48,39 +45,20 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
     }
   };
 
-  const handleImportBackup = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    const message = 
-      "⚠ ATENÇÃO: PROTOCOLO DE RESTAURAÇÃO ⚠\n\n" +
-      "Restaurar um backup substituirá TODOS os dados neste navegador:\n" +
-      "- Usuários\n" +
-      "- Fichas\n" +
-      "- Campanhas\n\n" +
-      "Esta ação é irreversível. Deseja continuar?";
-
-    if (!confirm(message)) {
-      e.target.value = '';
-      return;
-    }
-
+  const handleCloudConnect = async () => {
     setLoading(true);
-    const reader = new FileReader();
-    reader.onload = async (ev) => {
-      try {
-        const content = ev.target?.result as string;
-        await db.importDatabase(content);
-        alert("✔ BACKUP RESTAURADO.\nO sistema será reiniciado para aplicar as alterações.");
-        window.location.reload();
-      } catch (error) {
-        setError("O arquivo de backup é inválido ou está corrompido.");
+    try {
+        const res = await db.connectDefault();
+        if (res.success) {
+            alert("✔ CONEXÃO ESTABELECIDA COM SUPABASE.\nO sistema está online e sincronizado.");
+        } else {
+            setError(`Falha na conexão: ${res.error}`);
+        }
+    } catch (e) {
+        setError("Erro crítico ao tentar conectar ao banco de dados.");
+    } finally {
         setLoading(false);
-      } finally {
-        if (fileInputRef.current) fileInputRef.current.value = '';
-      }
-    };
-    reader.readAsText(file);
+    }
   };
 
   return (
@@ -201,26 +179,19 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
 
         </div>
         
-        {/* Restore Backup Section */}
+        {/* Cloud Connect Section */}
         <div className="mt-8 w-full flex flex-col items-center">
             <button 
-                onClick={() => fileInputRef.current?.click()}
+                onClick={handleCloudConnect}
                 disabled={loading}
-                className="group relative w-full bg-zinc-950 border border-dashed border-zinc-700 hover:border-ordem-gold p-4 rounded text-center transition-all"
+                className="group relative w-full bg-zinc-950 border border-zinc-800 hover:border-ordem-gold/50 p-4 rounded text-center transition-all hover:bg-zinc-900"
             >
                 <div className="flex items-center justify-center gap-2 text-xs text-zinc-500 group-hover:text-ordem-gold font-mono uppercase tracking-widest">
-                   {loading ? <span className="animate-spin">⟳</span> : <Icons.Upload />}
-                   {loading ? 'RESTAURANDO DADOS...' : 'MANUTENÇÃO: RESTAURAR BACKUP'}
+                   {loading ? <span className="animate-spin">⟳</span> : <Icons.Cloud />}
+                   {loading ? 'CONECTANDO...' : 'SINCRONIZAR COM SUPABASE'}
                 </div>
-                {!loading && <div className="text-[9px] text-zinc-700 mt-1">Carregar arquivo .json do sistema</div>}
+                {!loading && <div className="text-[9px] text-zinc-700 mt-1">Forçar conexão com banco de dados remoto</div>}
             </button>
-            <input 
-                type="file" 
-                ref={fileInputRef}
-                accept=".json"
-                className="hidden"
-                onChange={handleImportBackup}
-            />
         </div>
 
         <div className="text-center mt-8 text-[10px] text-zinc-800 font-mono">

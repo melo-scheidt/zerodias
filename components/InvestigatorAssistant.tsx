@@ -1,8 +1,8 @@
 
 import React, { useState, useRef, useEffect } from 'react';
-import { Icons } from '../constants';
-import { generateNarrativeHelp } from '../services/geminiService';
-import { Agente } from '../types';
+import { Icons, INITIAL_SKILLS } from '../constants';
+import { generateNarrativeHelp, parseAgentFromPdf } from '../services/geminiService';
+import { Agente, Classe } from '../types';
 
 interface Message {
     role: 'user' | 'ai';
@@ -12,15 +12,17 @@ interface Message {
 interface InvestigatorAssistantProps {
     agents: Agente[];
     onDeleteAgent: (id: string) => void;
+    onAddAgent: (agent: Agente) => void;
 }
 
-export const InvestigatorAssistant: React.FC<InvestigatorAssistantProps> = ({ agents, onDeleteAgent }) => {
+export const InvestigatorAssistant: React.FC<InvestigatorAssistantProps> = ({ agents, onDeleteAgent, onAddAgent }) => {
   const [input, setInput] = useState('');
   const [messages, setMessages] = useState<Message[]>([
       { role: 'ai', content: 'Conexão estabelecida com C.R.I.S. (Consultoria de Registros e Informações Sobrenaturais).\nComo posso auxiliar sua investigação hoje?' }
   ]);
   const [loading, setLoading] = useState(false);
   const endRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleSend = async () => {
       if (!input.trim() || loading) return;
@@ -69,6 +71,79 @@ export const InvestigatorAssistant: React.FC<InvestigatorAssistantProps> = ({ ag
       setLoading(false);
   };
 
+  const handlePdfUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+
+      setLoading(true);
+      setMessages(prev => [...prev, { role: 'user', content: `[UPLOAD DE ARQUIVO] ${file.name}` }]);
+      setMessages(prev => [...prev, { role: 'ai', content: "Iniciando digitalização óptica e análise de dados..." }]);
+
+      const reader = new FileReader();
+      reader.onload = async (ev) => {
+          try {
+              const base64Data = (ev.target?.result as string).split(',')[1];
+              // Importante: Passar o tipo do arquivo correto (image/png, application/pdf, etc)
+              const parsedAgent = await parseAgentFromPdf(base64Data, file.type);
+
+              if (parsedAgent) {
+                   const newAgent: Agente = {
+                      id: Date.now().toString(),
+                      nome: parsedAgent.nome || 'Agente Não Identificado',
+                      origem: parsedAgent.origem || 'Desconhecida',
+                      classe: (parsedAgent.classe as any) || Classe.COMBATENTE,
+                      trilha: parsedAgent.trilha || '',
+                      nex: parsedAgent.nex || 5,
+                      patente: parsedAgent.patente || 'Recruta',
+                      atributos: parsedAgent.atributos || { agi: 1, for: 1, int: 1, pre: 1, vig: 1 },
+                      status: parsedAgent.status || { pvAtual: 20, pvMax: 20, sanAtual: 20, sanMax: 20, peAtual: 5, peMax: 5 },
+                      pericias: parsedAgent.pericias || JSON.parse(JSON.stringify(INITIAL_SKILLS)),
+                      
+                      defesa: parsedAgent.defesa || 10,
+                      protecao: parsedAgent.protecao || '',
+                      deslocamento: parsedAgent.deslocamento || '9m',
+                      ataques: parsedAgent.ataques || [],
+                      habilidades: parsedAgent.habilidades || [],
+                      
+                      inventario: parsedAgent.inventario || '',
+                      detalhes: parsedAgent.detalhes || '',
+                      
+                      // Campos opcionais default
+                      obliquo: {
+                          cabeca: { dano: 0, limite: 10, lesao: '' },
+                          torco: { dano: 0, limite: 25, lesao: '' },
+                          bracoEsq: { dano: 0, limite: 12, lesao: '' },
+                          bracoDir: { dano: 0, limite: 12, lesao: '' },
+                          pernaEsq: { dano: 0, limite: 15, lesao: '' },
+                          pernaDir: { dano: 0, limite: 15, lesao: '' }
+                      },
+                      resistencias: {
+                          fisica: 0, balistica: 0, corte: 0, impacto: 0, perfuracao: 0,
+                          eletricidade: 0, fogo: 0, frio: 0, quimico: 0,
+                          mental: 0, sangue: 0, morte: 0, energia: 0, conhecimento: 0, medo: 0
+                      }
+                  };
+                  
+                  onAddAgent(newAgent);
+                  setMessages(prev => [...prev, { 
+                      role: 'ai', 
+                      content: `ANÁLISE CONCLUÍDA.\nFicha do agente "${newAgent.nome}" foi compilada e adicionada ao banco de dados com sucesso.` 
+                  }]);
+
+              } else {
+                  setMessages(prev => [...prev, { role: 'ai', content: "FALHA NA LEITURA. O documento está ilegível ou corrompido." }]);
+              }
+          } catch (error) {
+              setMessages(prev => [...prev, { role: 'ai', content: "ERRO CRÍTICO no processamento do arquivo." }]);
+              console.error(error);
+          } finally {
+              setLoading(false);
+              if(fileInputRef.current) fileInputRef.current.value = '';
+          }
+      };
+      reader.readAsDataURL(file);
+  };
+
   useEffect(() => {
       endRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
@@ -80,8 +155,24 @@ export const InvestigatorAssistant: React.FC<InvestigatorAssistantProps> = ({ ag
             <h2 className="font-mono text-green-500 text-sm flex items-center gap-2 tracking-wider">
                 <span className="animate-pulse">●</span> C.R.I.S._TERMINAL_V2
             </h2>
-            <div className="text-[10px] text-zinc-600 font-mono border border-zinc-700 px-2 py-0.5 rounded">
-                SECURE_CONNECTION
+            <div className="flex items-center gap-2">
+                <button 
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={loading}
+                    className="flex items-center gap-2 text-[10px] text-zinc-400 font-mono border border-zinc-700 px-2 py-1 rounded hover:text-green-500 hover:border-green-500 transition-colors uppercase"
+                >
+                   <Icons.Upload /> SCANNER OCR
+                </button>
+                <div className="text-[10px] text-zinc-600 font-mono border border-zinc-700 px-2 py-0.5 rounded">
+                    SECURE_CONNECTION
+                </div>
+                <input 
+                    type="file" 
+                    ref={fileInputRef} 
+                    className="hidden" 
+                    accept="image/*,application/pdf"
+                    onChange={handlePdfUpload}
+                />
             </div>
         </div>
 
@@ -115,7 +206,7 @@ export const InvestigatorAssistant: React.FC<InvestigatorAssistantProps> = ({ ag
                  <div className="flex flex-col items-start animate-pulse">
                     <span className="text-[10px] text-zinc-600 mb-1">SISTEMA</span>
                     <div className="bg-black border border-green-900/30 p-3 text-green-600 text-xs">
-                        PROCESSANDO CONSULTA AO OUTRO LADO...
+                        PROCESSANDO DADOS NO OUTRO LADO...
                     </div>
                  </div>
             )}
