@@ -1,6 +1,6 @@
 
 import { Agente, Campanha, User, LibraryDocument } from '../types';
-import { createClient, SupabaseClient } from '@supabase/supabase-js';
+import { createClient, SupabaseClient, RealtimeChannel } from '@supabase/supabase-js';
 
 const KEYS = {
   AGENTS: 'op_database_agents_v1',
@@ -11,12 +11,13 @@ const KEYS = {
 };
 
 // Credenciais fornecidas
-const DEFAULT_SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || "";
-const DEFAULT_SUPABASE_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || "";
+const DEFAULT_SUPABASE_URL = "https://ndhdrsqiunxynmgojmha.supabase.co";
+const DEFAULT_SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5kaGRyc3FpdW54eW5tZ29qbWhhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjQ2MjQwNzMsImV4cCI6MjA4MDIwMDA3M30.Hi7voWo2271XGYcKSDn3vqg58zZ6F5KqMbCPW0-px9U";
 
 class DatabaseService {
   private supabase: SupabaseClient | null = null;
   public isOnline: boolean = false;
+  private campaignSubscription: RealtimeChannel | null = null;
 
   constructor() {
       this.initConnection();
@@ -32,19 +33,14 @@ class DatabaseService {
           const { url, key } = JSON.parse(creds);
           await this.connect(url, key);
       } else {
-          // 2. Conexão automática com as chaves padrão (se existirem)
-          if (DEFAULT_SUPABASE_URL && DEFAULT_SUPABASE_KEY) {
-              console.log("Inicializando conexão padrão com Supabase...");
-              await this.connect(DEFAULT_SUPABASE_URL, DEFAULT_SUPABASE_KEY);
-          }
+          // 2. Conexão automática com as chaves padrão
+          console.log("Inicializando conexão padrão com Supabase...");
+          await this.connect(DEFAULT_SUPABASE_URL, DEFAULT_SUPABASE_KEY);
       }
   }
 
   public async connectDefault(): Promise<{ success: boolean; error?: string }> {
-      if (DEFAULT_SUPABASE_URL && DEFAULT_SUPABASE_KEY) {
-          return this.connect(DEFAULT_SUPABASE_URL, DEFAULT_SUPABASE_KEY);
-      }
-      return { success: false, error: "Credenciais Supabase não configuradas." };
+      return this.connect(DEFAULT_SUPABASE_URL, DEFAULT_SUPABASE_KEY);
   }
 
   public async connect(url: string, key: string): Promise<{ success: boolean; error?: string }> {
@@ -83,6 +79,7 @@ class DatabaseService {
   }
 
   public disconnect() {
+      if (this.campaignSubscription) this.campaignSubscription.unsubscribe();
       this.supabase = null;
       localStorage.removeItem(KEYS.CREDS);
       this.isOnline = false;
@@ -90,6 +87,41 @@ class DatabaseService {
 
   public getStatus(): boolean {
       return this.isOnline;
+  }
+
+  // --- REALTIME SUBSCRIPTION ---
+
+  public subscribeToCampaign(campaignId: string, onUpdate: (data: Campanha) => void) {
+      if (!this.supabase || !this.isOnline) return;
+
+      // Remove assinatura anterior se existir
+      if (this.campaignSubscription) {
+          this.supabase.removeChannel(this.campaignSubscription);
+      }
+
+      console.log(`Iniciando escuta Realtime para campanha: ${campaignId}`);
+
+      // Cria o canal de escuta para UPDATE na tabela documents onde ID = current_campaign
+      this.campaignSubscription = this.supabase
+          .channel('public:documents')
+          .on(
+              'postgres_changes',
+              {
+                  event: 'UPDATE',
+                  schema: 'public',
+                  table: 'documents',
+                  filter: `id=eq.current_campaign` // Escuta apenas a campanha ativa
+              },
+              (payload) => {
+                  console.log("Realtime Update Recebido!", payload);
+                  if (payload.new && payload.new.data) {
+                      onUpdate(payload.new.data as Campanha);
+                  }
+              }
+          )
+          .subscribe((status) => {
+              console.log("Status da Conexão Realtime:", status);
+          });
   }
 
   // --- AUTH ---

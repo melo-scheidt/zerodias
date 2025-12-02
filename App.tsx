@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useRef } from 'react';
 import { Agente, Classe, DiceResult, Campanha, User } from './types';
 import { INITIAL_SKILLS, Icons } from './constants';
@@ -87,6 +88,16 @@ const App: React.FC = () => {
     }
   }, [currentUser]);
 
+  // Realtime Subscription
+  useEffect(() => {
+      if (currentCampaign?.id && db.isOnline) {
+          db.subscribeToCampaign(currentCampaign.id, (updatedCampaign) => {
+              console.log("App: Recebida atualização da campanha", updatedCampaign);
+              setCurrentCampaign(updatedCampaign);
+          });
+      }
+  }, [currentCampaign?.id]);
+
   const loadData = async () => {
       // Carrega TODOS os agentes do banco (sem filtro de ID)
       const agents = await db.listAgents();
@@ -118,7 +129,6 @@ const App: React.FC = () => {
       setCurrentCampaign(campaign);
   };
 
-  // Função para forçar atualização da campanha (Sync Manual)
   const handleRefreshCampaign = async () => {
       const updatedCampaign = await db.getCampaign();
       if (updatedCampaign) {
@@ -128,7 +138,7 @@ const App: React.FC = () => {
       return null;
   };
 
-  // Auto-Save
+  // Auto-Save Agent
   useEffect(() => {
     if (!currentUser || isLoading) return;
     if (!agente.id) return;
@@ -202,7 +212,7 @@ const App: React.FC = () => {
 
   const handleLogout = () => {
       setCurrentUser(null);
-      // Opcional: Limpar estados ou fazer db.disconnect() se necessário
+      db.disconnect();
   };
 
   if (!currentUser) {
