@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef } from 'react';
 import { Agente, Classe, DiceResult, Campanha, User } from './types';
 import { INITIAL_SKILLS, Icons } from './constants';
@@ -119,6 +118,16 @@ const App: React.FC = () => {
       setCurrentCampaign(campaign);
   };
 
+  // Função para forçar atualização da campanha (Sync Manual)
+  const handleRefreshCampaign = async () => {
+      const updatedCampaign = await db.getCampaign();
+      if (updatedCampaign) {
+          setCurrentCampaign(updatedCampaign);
+          return updatedCampaign;
+      }
+      return null;
+  };
+
   // Auto-Save
   useEffect(() => {
     if (!currentUser || isLoading) return;
@@ -193,7 +202,7 @@ const App: React.FC = () => {
 
   const handleLogout = () => {
       setCurrentUser(null);
-      // Opcional: Limpar estados ou fazer db.disconnect()
+      // Opcional: Limpar estados ou fazer db.disconnect() se necessário
   };
 
   if (!currentUser) {
@@ -221,10 +230,10 @@ const App: React.FC = () => {
     <div className="flex h-screen bg-black text-white font-sans overflow-hidden relative">
       
       {/* Sidebar (HUD Lateral) */}
-      <aside className="w-20 lg:w-64 bg-zinc-950 border-r border-zinc-800 flex flex-col justify-between shrink-0 relative z-20">
+      <aside className="w-20 lg:w-64 bg-zinc-950 border-r border-zinc-900 flex flex-col justify-between shrink-0 relative z-20">
         <div>
            {/* Header Logo */}
-           <div className="p-6 flex items-center gap-3 border-b border-zinc-800">
+           <div className="p-6 flex items-center gap-3 border-b border-zinc-900">
               <div className="w-8 h-8 rounded-full border border-ordem-gold flex items-center justify-center bg-ordem-gold/10 animate-pulse-slow">
                  <span className="font-display text-ordem-gold text-xs">OP</span>
               </div>
@@ -232,133 +241,105 @@ const App: React.FC = () => {
            </div>
 
            {/* User Status */}
-           <div className="p-4 border-b border-zinc-800 bg-zinc-900/30 hidden lg:block">
-               <div className="flex items-center gap-2">
-                   <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></div>
-                   <span className="text-xs font-mono uppercase text-zinc-400">
-                       {currentUser.role === 'admin' ? 'Acesso Mestre' : 'Acesso Agente'}
-                   </span>
+           <div className="p-6 border-b border-zinc-900">
+               <div className="flex items-center gap-3">
+                   <div className={`w-10 h-10 rounded border flex items-center justify-center text-lg font-bold ${currentUser.role === 'admin' ? 'bg-ordem-blood text-white border-ordem-red' : 'bg-zinc-800 text-zinc-400 border-zinc-700'}`}>
+                       {currentUser.username.charAt(0).toUpperCase()}
+                   </div>
+                   <div className="hidden lg:block overflow-hidden">
+                       <div className="text-sm font-bold text-white truncate">{currentUser.username}</div>
+                       <div className="text-[10px] uppercase font-mono text-zinc-500">{currentUser.role === 'admin' ? 'Mestre // Admin' : 'Agente // Operador'}</div>
+                   </div>
                </div>
-               <div className="text-sm font-bold text-white truncate">{currentUser.username}</div>
            </div>
 
            {/* Navigation */}
-           <nav className="flex flex-col gap-1 p-2">
-              {menuItems.map(item => (
-                <button 
-                  key={item.id}
-                  onClick={() => setActiveTab(item.id as any)}
-                  className={`flex items-center gap-3 p-3 rounded transition-all duration-300 group ${activeTab === item.id ? 'bg-ordem-blood text-white shadow-[0_0_15px_rgba(239,68,68,0.4)]' : 'text-zinc-500 hover:text-white hover:bg-zinc-900'}`}
-                >
-                  <item.icon />
-                  <span className="hidden lg:block font-mono text-xs uppercase tracking-wider">{item.label}</span>
-                  {activeTab === item.id && <div className="ml-auto w-1 h-1 bg-white rounded-full hidden lg:block"></div>}
-                </button>
-              ))}
+           <nav className="p-4 space-y-2">
+               {menuItems.map(item => (
+                   <button
+                       key={item.id}
+                       onClick={() => setActiveTab(item.id as any)}
+                       className={`w-full flex items-center gap-3 px-4 py-3 rounded-sm transition-all duration-300 group ${activeTab === item.id ? 'bg-zinc-900 border-l-2 border-ordem-gold text-white' : 'text-zinc-500 hover:text-zinc-300 hover:bg-zinc-900/50'}`}
+                   >
+                       <span className={activeTab === item.id ? 'text-ordem-gold' : 'group-hover:text-white'}>
+                           <item.icon />
+                       </span>
+                       <span className="hidden lg:block font-mono text-xs uppercase tracking-wider">{item.label}</span>
+                   </button>
+               ))}
            </nav>
         </div>
 
-        {/* Footer Actions */}
-        <div className="p-2 border-t border-zinc-800 space-y-2">
-            <button 
-                onClick={handleLogout}
-                className="w-full flex items-center justify-center lg:justify-start gap-3 p-3 text-zinc-600 hover:text-red-500 hover:bg-red-900/10 rounded transition-colors"
-                title="Desconectar"
-            >
+        {/* Footer */}
+        <div className="p-4 border-t border-zinc-900">
+            <button onClick={handleLogout} className="w-full flex items-center gap-3 px-4 py-2 text-zinc-600 hover:text-red-500 transition-colors">
                 <Icons.WifiOff />
-                <span className="hidden lg:block font-mono text-xs uppercase">Sair</span>
+                <span className="hidden lg:block font-mono text-xs uppercase">Desconectar</span>
             </button>
         </div>
       </aside>
 
-      {/* Main Content Area (Tático) */}
-      <main className="flex-1 bg-black relative flex flex-col overflow-hidden">
-        
-        {/* Top Status Bar (HUD) */}
-        <header className="h-12 bg-zinc-950 border-b border-zinc-800 flex items-center justify-between px-6 shrink-0 relative z-10">
-           <div className="flex items-center gap-4 text-[10px] font-mono text-zinc-500 uppercase">
-              <span>SISTEMA: ONLINE</span>
-              <span className="hidden md:inline">|</span>
-              <span className="hidden md:inline">LATÊNCIA: 12ms</span>
-              <span className="hidden md:inline">|</span>
-              <span className="text-ordem-gold">{new Date().toLocaleDateString()}</span>
-           </div>
-           <div className="text-[10px] font-mono text-zinc-600 uppercase">
-               Versão 2.4.1 // Protocolo C.R.I.S. Ativo
-           </div>
-        </header>
-
-        {/* Dynamic Content View */}
-        <div className="flex-1 overflow-hidden p-1 relative">
-           
-           {/* Background Grid/Effect */}
-           <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.02)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.02)_1px,transparent_1px)] bg-[size:50px_50px] pointer-events-none"></div>
-
-           <div className="relative z-10 w-full h-full p-4">
+      {/* Main Content Area */}
+      <main className="flex-1 overflow-hidden relative bg-[url('https://grainy-gradients.vercel.app/noise.svg')] bg-opacity-5">
+          <div className="absolute inset-0 bg-black/80 pointer-events-none z-0"></div>
+          <div className="relative z-10 h-full p-4 lg:p-6 overflow-hidden">
               {activeTab === 'gallery' && (
                   <CharacterGallery 
-                    agents={savedAgents} 
-                    onSelectAgent={handleSelectAgent} 
-                    onAddAgent={handleAddAgent}
-                    onDeleteAgent={handleDeleteAgent}
+                      agents={savedAgents} 
+                      onSelectAgent={handleSelectAgent} 
+                      onAddAgent={handleAddAgent}
+                      onDeleteAgent={handleDeleteAgent}
                   />
               )}
-              
               {activeTab === 'ficha' && (
                   <CharacterSheet 
-                    agente={agente} 
-                    setAgente={setAgente} 
-                    onAttributeRoll={handleAttributeRoll}
+                      agente={agente} 
+                      setAgente={setAgente} 
+                      onAttributeRoll={handleAttributeRoll} 
                   />
               )}
-
               {activeTab === 'mapa' && (
                   <MapExplorer 
-                    savedAgents={savedAgents} 
-                    currentCampaign={currentCampaign}
-                    currentUser={currentUser}
-                    onUpdateCampaign={(c) => { setCurrentCampaign(c); db.saveCampaign(c); }}
+                      savedAgents={savedAgents} 
+                      currentCampaign={currentCampaign}
+                      currentUser={currentUser}
+                      onUpdateCampaign={(c) => {
+                          db.saveCampaign(c);
+                          setCurrentCampaign(c);
+                      }}
                   />
               )}
-              
               {activeTab === 'dados' && (
                   <DiceRoller history={diceHistory} setHistory={setDiceHistory} />
               )}
-              
-              {/* IA Restrita */}
-              {activeTab === 'ia' && currentUser.role === 'admin' && (
-                  <InvestigatorAssistant 
-                     agents={savedAgents} 
-                     onDeleteAgent={handleDeleteAgent}
-                     onAddAgent={handleAddAgent}
-                  />
-              )}
-
               {activeTab === 'campanha' && (
                   <CampaignManager 
-                    currentCampaign={currentCampaign} 
-                    setCurrentCampaign={(c) => { setCurrentCampaign(c); if(c) db.saveCampaign(c); else db.deleteCampaign(); }}
-                    playerAgent={agente}
-                    currentUser={currentUser}
+                      currentCampaign={currentCampaign} 
+                      setCurrentCampaign={(c) => {
+                          if (c) db.saveCampaign(c);
+                          else db.deleteCampaign();
+                          setCurrentCampaign(c);
+                      }}
+                      playerAgent={agente}
+                      currentUser={currentUser}
                   />
               )}
-
-              {activeTab === 'regras' && (
-                  <MechanicsReference />
-              )}
+              {activeTab === 'regras' && <MechanicsReference />}
+              {activeTab === 'pdfs' && <PdfLibrary />}
               
-              {activeTab === 'pdfs' && (
-                  <PdfLibrary />
+              {/* Admin Only Tabs */}
+              {activeTab === 'ia' && currentUser.role === 'admin' && (
+                  <InvestigatorAssistant 
+                      agents={savedAgents} 
+                      onDeleteAgent={handleDeleteAgent}
+                      onAddAgent={handleAddAgent}
+                  />
               )}
-
-              {/* Config Restrita */}
               {activeTab === 'config' && currentUser.role === 'admin' && (
                   <Settings />
               )}
-           </div>
-        </div>
+          </div>
       </main>
-
     </div>
   );
 };
