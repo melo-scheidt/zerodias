@@ -10,10 +10,61 @@ interface CharacterSheetProps {
   onAttributeRoll: (attrName: string, value: number) => void;
 }
 
+// Sub-component defined outside to prevent focus loss
+const ObliquePart = ({ name, partKey, data, x, y, onUpdate }: { name: string, partKey: keyof SistemaObliquo, data: VitalPart, x: string, y: string, onUpdate: (p: keyof SistemaObliquo, f: keyof VitalPart, v: any) => void }) => {
+    const isCritical = data.dano >= data.limite;
+    return (
+        <div className="absolute p-2 bg-black/80 border border-zinc-700 rounded w-40 hover:border-ordem-gold hover:z-50 transition-all backdrop-blur-sm shadow-lg" style={{ top: y, left: x }}>
+            <div className="flex justify-between items-center mb-1">
+                <span className={`text-[10px] font-bold uppercase tracking-wider ${isCritical ? 'text-red-500 animate-pulse' : 'text-zinc-400'}`}>{name}</span>
+                <span className="text-[10px] font-mono text-zinc-600">{data.dano}/{data.limite}</span>
+            </div>
+            
+            <div className="w-full bg-zinc-800 h-1.5 rounded mb-2 overflow-hidden">
+                    <div className="h-full bg-ordem-red" style={{ width: `${Math.min(100, (data.dano/data.limite)*100)}%` }}></div>
+            </div>
+
+            <div className="flex gap-1 mb-2">
+                <button onClick={() => onUpdate(partKey, 'dano', Math.max(0, data.dano - 1))} className="bg-zinc-900 border border-zinc-700 w-6 h-6 flex items-center justify-center text-zinc-400 hover:text-white">-</button>
+                <input 
+                type="number" 
+                value={data.dano}
+                onChange={(e) => onUpdate(partKey, 'dano', parseInt(e.target.value) || 0)}
+                className="flex-1 bg-zinc-900 border border-zinc-700 text-center text-xs text-white"
+                />
+                <button onClick={() => onUpdate(partKey, 'dano', data.dano + 1)} className="bg-zinc-900 border border-zinc-700 w-6 h-6 flex items-center justify-center text-zinc-400 hover:text-white">+</button>
+            </div>
+
+            <div className="flex justify-between items-center mb-1 gap-1">
+                <span className="text-[8px] text-zinc-600 uppercase">LIMITE</span>
+                <input 
+                    type="number"
+                    value={data.limite}
+                    onChange={(e) => onUpdate(partKey, 'limite', parseInt(e.target.value) || 1)}
+                    className="w-10 bg-zinc-900 border border-zinc-800 text-[9px] text-center text-zinc-400 focus:text-ordem-gold outline-none"
+                />
+            </div>
+
+            <input 
+            type="text" 
+            placeholder="Obs: Lesão..." 
+            value={data.lesao}
+            onChange={(e) => onUpdate(partKey, 'lesao', e.target.value)}
+            className="w-full bg-transparent border-b border-zinc-800 text-[10px] text-zinc-300 focus:border-ordem-gold outline-none"
+            />
+        </div>
+    )
+};
+
 export const CharacterSheet: React.FC<CharacterSheetProps> = ({ agente, setAgente, onAttributeRoll }) => {
   const [activeTab, setActiveTab] = useState<'geral' | 'adicoes'>('geral');
   const [isGeneratingImg, setIsGeneratingImg] = useState(false);
   const imgInputRef = useRef<HTMLInputElement>(null);
+
+  // Estados locais para a calculadora de dano e resistências
+  const [calcDamage, setCalcDamage] = useState(0);
+  const [damageType, setDamageType] = useState('fisica');
+  const [targetLocation, setTargetLocation] = useState<string>('geral');
 
   const handleStatChange = (key: keyof Status, value: number) => {
     setAgente(prev => ({
@@ -122,6 +173,82 @@ export const CharacterSheet: React.FC<CharacterSheetProps> = ({ agente, setAgent
       }));
   };
 
+  // --- Sistema Avançado de Dano ---
+  const applyDamage = () => {
+      if(calcDamage <= 0) return;
+
+      // Agora a "resistência" funciona como o lado do dado (ex: 4 = d4)
+      const resistanceDie = (agente.resistencias as any)?.[damageType] || 0;
+      let damageReduction = 0;
+      let rollDetails = "";
+
+      if (resistanceDie > 0) {
+          // Rola um dado com o número de lados igual à resistência
+          damageReduction = Math.floor(Math.random() * resistanceDie) + 1;
+          rollDetails = `(Rolado d${resistanceDie}: ${damageReduction})`;
+      } else {
+          rollDetails = "(Sem resistência)";
+      }
+
+      const finalDamage = Math.max(0, calcDamage - damageReduction);
+      
+      // Flash screen effect (simple alert for now)
+      // Decide if affects PV or SAN based on type
+      const isMental = damageType === 'mental' || damageType === 'medo' || damageType === 'conhecimento';
+      let appliedToPart = false;
+
+      // Atualiza o estado do agente
+      setAgente(prev => {
+          const newState = { ...prev };
+
+          // 1. Redução Global (PV ou SAN)
+          if(isMental) {
+              const newSan = Math.max(0, prev.status.sanAtual - finalDamage);
+              newState.status = { ...prev.status, sanAtual: newSan };
+          } else {
+              const newPv = Math.max(0, prev.status.pvAtual - finalDamage);
+              newState.status = { ...prev.status, pvAtual: newPv };
+          }
+
+          // 2. Aplicação no Sistema Oblíquo (se selecionado e não for dano mental puro)
+          if (!isMental && targetLocation !== 'geral' && prev.obliquo) {
+              const part = targetLocation as keyof SistemaObliquo;
+              const currentPartDamage = prev.obliquo[part].dano;
+              newState.obliquo = {
+                  ...prev.obliquo,
+                  [part]: {
+                      ...prev.obliquo[part],
+                      dano: currentPartDamage + finalDamage
+                  }
+              };
+              appliedToPart = true;
+          }
+
+          return newState;
+      });
+
+      let msg = `DANO RECEBIDO: ${calcDamage}\n`;
+      msg += `RESISTÊNCIA: -${damageReduction} ${rollDetails}\n`;
+      msg += `DANO FINAL: ${finalDamage} (${isMental ? 'SAN' : 'PV'})`;
+
+      if (appliedToPart) {
+          msg += `\n\n[SISTEMA OBLÍQUO] Aplicado ao local: ${targetLocation.toUpperCase()}`;
+      }
+
+      alert(msg);
+      setCalcDamage(0);
+  };
+
+  const updateResistencia = (type: string, value: number) => {
+      setAgente(prev => ({
+          ...prev,
+          resistencias: {
+              ...prev.resistencias,
+              [type]: value
+          } as any
+      }));
+  };
+
   // Componente de Atributo Hexagonal
   const AttrBlock = ({ label, value, prop }: { label: string, value: number, prop: keyof Atributos }) => (
     <div className="relative flex flex-col items-center justify-center w-24 h-24 group">
@@ -192,41 +319,6 @@ export const CharacterSheet: React.FC<CharacterSheetProps> = ({ agente, setAgent
     </div>
   );
 
-  const ObliquePart = ({ name, partKey, data, x, y }: { name: string, partKey: keyof SistemaObliquo, data: VitalPart, x: string, y: string }) => {
-      const isCritical = data.dano >= data.limite;
-      return (
-          <div className="absolute p-2 bg-black/80 border border-zinc-700 rounded w-40 hover:border-ordem-gold hover:z-50 transition-all backdrop-blur-sm" style={{ top: y, left: x }}>
-              <div className="flex justify-between items-center mb-1">
-                  <span className={`text-[10px] font-bold uppercase tracking-wider ${isCritical ? 'text-red-500 animate-pulse' : 'text-zinc-400'}`}>{name}</span>
-                  <span className="text-[10px] font-mono text-zinc-600">{data.dano}/{data.limite}</span>
-              </div>
-              
-              <div className="w-full bg-zinc-800 h-1.5 rounded mb-2 overflow-hidden">
-                   <div className="h-full bg-ordem-red" style={{ width: `${Math.min(100, (data.dano/data.limite)*100)}%` }}></div>
-              </div>
-
-              <div className="flex gap-1 mb-2">
-                  <button onClick={() => updateObliquo(partKey, 'dano', Math.max(0, data.dano - 1))} className="bg-zinc-900 border border-zinc-700 w-6 h-6 flex items-center justify-center text-zinc-400 hover:text-white">-</button>
-                  <input 
-                    type="number" 
-                    value={data.dano}
-                    onChange={(e) => updateObliquo(partKey, 'dano', parseInt(e.target.value) || 0)}
-                    className="flex-1 bg-zinc-900 border border-zinc-700 text-center text-xs text-white"
-                  />
-                  <button onClick={() => updateObliquo(partKey, 'dano', data.dano + 1)} className="bg-zinc-900 border border-zinc-700 w-6 h-6 flex items-center justify-center text-zinc-400 hover:text-white">+</button>
-              </div>
-
-              <input 
-                type="text" 
-                placeholder="Obs: Lesão..." 
-                value={data.lesao}
-                onChange={(e) => updateObliquo(partKey, 'lesao', e.target.value)}
-                className="w-full bg-transparent border-b border-zinc-800 text-[10px] text-zinc-300 focus:border-ordem-gold outline-none"
-              />
-          </div>
-      )
-  };
-
   return (
     <div className="flex flex-col h-full overflow-hidden">
         
@@ -243,7 +335,7 @@ export const CharacterSheet: React.FC<CharacterSheetProps> = ({ agente, setAgent
                     onClick={() => setActiveTab('adicoes')}
                     className={`text-sm font-mono uppercase tracking-widest px-4 py-2 rounded transition-colors flex items-center gap-2 ${activeTab === 'adicoes' ? 'bg-ordem-blood text-white font-bold' : 'bg-black/40 text-zinc-500 hover:text-white'}`}
                 >
-                    <Icons.Activity /> Adições / Sistema Oblíquo
+                    <Icons.Activity /> Adições / Tático
                 </button>
              </div>
              <div>
@@ -477,64 +569,129 @@ export const CharacterSheet: React.FC<CharacterSheetProps> = ({ agente, setAgent
 
                 <div className="flex flex-col md:flex-row h-full gap-8 relative z-10">
                     
-                    {/* Left Column: Description */}
-                    <div className="w-full md:w-1/3 space-y-6">
+                    {/* Left Column: Diagnostics & Calculator */}
+                    <div className="w-full md:w-1/3 space-y-6 flex flex-col">
                         <div>
                              <h2 className="text-2xl font-display text-ordem-red uppercase tracking-widest text-glow-red">Diagnóstico Tático</h2>
                              <p className="font-mono text-zinc-500 text-xs mt-2">
-                                 SISTEMA OBLÍQUO V1.0 - Monitoramento de integridade física segmentada.
-                                 Danos excedentes ao limite de um membro causam lesões permanentes ou amputação.
+                                 SISTEMA OBLÍQUO V1.2 - Monitoramento de integridade e calculadora de redução de danos (RD).
                              </p>
                         </div>
+
+                        {/* Calculadora de Dano (NOVO) */}
+                        <div className="bg-zinc-900/80 border border-zinc-700 p-4 rounded shadow-lg">
+                             <div className="text-ordem-gold font-bold text-xs uppercase mb-3 flex items-center gap-2">
+                                 <Icons.Sparkles /> Protocolo de Dano
+                             </div>
+                             <div className="flex gap-2 mb-3">
+                                 <input 
+                                     type="number" 
+                                     value={calcDamage || ''}
+                                     onChange={(e) => setCalcDamage(parseInt(e.target.value) || 0)}
+                                     placeholder="Dano Recebido"
+                                     className="flex-1 bg-black border border-zinc-600 p-2 text-white font-mono text-sm focus:border-red-500 outline-none"
+                                 />
+                                 <select 
+                                     value={damageType}
+                                     onChange={(e) => setDamageType(e.target.value)}
+                                     className="bg-black border border-zinc-600 text-zinc-300 text-xs uppercase p-2 outline-none w-1/3"
+                                 >
+                                     <option value="fisica">Física</option>
+                                     <option value="balistica">Balística</option>
+                                     <option value="corte">Corte</option>
+                                     <option value="impacto">Impacto</option>
+                                     <option value="perfuracao">Perfuração</option>
+                                     <option value="eletricidade">Eletricidade</option>
+                                     <option value="fogo">Fogo</option>
+                                     <option value="frio">Frio</option>
+                                     <option value="quimico">Químico</option>
+                                     <option value="mental">Mental</option>
+                                     <option value="sangue">Sangue</option>
+                                     <option value="morte">Morte</option>
+                                     <option value="energia">Energia</option>
+                                     <option value="conhecimento">Conhecimento</option>
+                                     <option value="medo">Medo</option>
+                                 </select>
+                             </div>
+                             
+                             <div className="mb-3">
+                                 <label className="text-[10px] text-zinc-500 uppercase block mb-1">Local do Dano (Opcional)</label>
+                                 <select 
+                                     value={targetLocation}
+                                     onChange={(e) => setTargetLocation(e.target.value)}
+                                     className="w-full bg-black border border-zinc-600 text-zinc-300 text-xs uppercase p-2 outline-none"
+                                 >
+                                     <option value="geral">Geral / Sem local</option>
+                                     <option value="cabeca">Cabeça</option>
+                                     <option value="torco">Tronco</option>
+                                     <option value="bracoEsq">Braço Esquerdo</option>
+                                     <option value="bracoDir">Braço Direito</option>
+                                     <option value="pernaEsq">Perna Esquerda</option>
+                                     <option value="pernaDir">Perna Direita</option>
+                                 </select>
+                             </div>
+
+                             <button 
+                                 onClick={applyDamage}
+                                 className="w-full bg-ordem-red hover:bg-red-700 text-white font-bold py-2 text-xs uppercase tracking-widest transition-colors"
+                             >
+                                 Aplicar Dano
+                             </button>
+                        </div>
                         
-                        <div className="bg-zinc-900/50 p-4 rounded border border-zinc-800">
-                            <h3 className="text-ordem-gold font-bold text-sm mb-2 uppercase flex items-center gap-2"><Icons.Activity /> Status Geral</h3>
-                            <div className="space-y-2 font-mono text-xs">
-                                <div className="flex justify-between">
-                                    <span className="text-zinc-400">Batimentos:</span>
-                                    <span className="text-green-500 animate-pulse">85 BPM</span>
-                                </div>
-                                <div className="flex justify-between">
-                                    <span className="text-zinc-400">Pressão:</span>
-                                    <span className="text-zinc-300">12/8</span>
-                                </div>
-                                <div className="flex justify-between">
-                                    <span className="text-zinc-400">Adrenalina:</span>
-                                    <span className="text-ordem-red">ELEVADA</span>
-                                </div>
-                            </div>
+                        {/* Tabela de Resistências */}
+                        <div className="flex-1 bg-black/40 border border-zinc-800 rounded p-4 overflow-y-auto custom-scrollbar">
+                             <h3 className="text-zinc-500 font-bold text-xs uppercase mb-3 border-b border-zinc-800 pb-2">Dados de Resistência (RD)</h3>
+                             <div className="grid grid-cols-2 gap-x-4 gap-y-2">
+                                 {Object.keys(agente.resistencias || {}).map((key) => (
+                                     <div key={key} className="flex justify-between items-center text-xs group">
+                                         <span className="text-zinc-400 capitalize group-hover:text-white transition-colors">{key}</span>
+                                         <input 
+                                             type="number" 
+                                             placeholder="d..."
+                                             className="w-10 bg-zinc-900 border border-zinc-700 text-center text-white focus:border-ordem-gold outline-none rounded"
+                                             value={(agente.resistencias as any)[key]}
+                                             onChange={(e) => updateResistencia(key, parseInt(e.target.value) || 0)}
+                                         />
+                                     </div>
+                                 ))}
+                             </div>
+                             <p className="text-[9px] text-zinc-600 mt-2 italic">* O valor define o dado rolado (ex: 4 = 1d4).</p>
                         </div>
                     </div>
 
                     {/* Right Column: Interactive Body Map */}
-                    <div className="flex-1 relative flex items-center justify-center border border-zinc-800 bg-black/50 rounded-lg">
-                        {/* Body Silhouette SVG */}
-                        <svg viewBox="0 0 200 400" className="h-[80%] text-zinc-800 fill-current drop-shadow-[0_0_10px_rgba(0,0,0,0.8)]">
-                           <path d="M100,20 C115,20 125,35 125,50 C125,65 115,75 100,75 C85,75 75,65 75,50 C75,35 85,20 100,20 Z" className={agente.obliquo?.cabeca.dano! >= agente.obliquo?.cabeca.limite! ? "text-red-900 animate-pulse" : ""}/>
-                           <path d="M80,80 L120,80 L130,180 L70,180 Z" className={agente.obliquo?.torco.dano! >= agente.obliquo?.torco.limite! ? "text-red-900 animate-pulse" : ""}/>
-                           <path d="M135,80 L160,180 L150,190 L125,90 Z" className={agente.obliquo?.bracoDir.dano! >= agente.obliquo?.bracoDir.limite! ? "text-red-900 animate-pulse" : ""}/>
-                           <path d="M65,80 L40,180 L50,190 L75,90 Z" className={agente.obliquo?.bracoEsq.dano! >= agente.obliquo?.bracoEsq.limite! ? "text-red-900 animate-pulse" : ""}/>
-                           <path d="M80,185 L95,350 L75,360 L60,190 Z" className={agente.obliquo?.pernaEsq.dano! >= agente.obliquo?.pernaEsq.limite! ? "text-red-900 animate-pulse" : ""}/>
-                           <path d="M120,185 L105,350 L125,360 L140,190 Z" className={agente.obliquo?.pernaDir.dano! >= agente.obliquo?.pernaDir.limite! ? "text-red-900 animate-pulse" : ""}/>
-                        </svg>
+                    <div className="flex-1 relative flex flex-col items-center justify-center border border-zinc-800 bg-black/50 rounded-lg p-4">
 
-                        {/* Interactive Widgets */}
-                        {agente.obliquo && (
-                            <>
-                                <ObliquePart name="CABEÇA" partKey="cabeca" data={agente.obliquo.cabeca} x="10%" y="5%" />
-                                <ObliquePart name="TRONCO" partKey="torco" data={agente.obliquo.torco} x="60%" y="20%" />
-                                <ObliquePart name="BRAÇO ESQ." partKey="bracoEsq" data={agente.obliquo.bracoEsq} x="5%" y="30%" />
-                                <ObliquePart name="BRAÇO DIR." partKey="bracoDir" data={agente.obliquo.bracoDir} x="70%" y="30%" />
-                                <ObliquePart name="PERNA ESQ." partKey="pernaEsq" data={agente.obliquo.pernaEsq} x="10%" y="65%" />
-                                <ObliquePart name="PERNA DIR." partKey="pernaDir" data={agente.obliquo.pernaDir} x="60%" y="65%" />
-                            </>
-                        )}
+                        {/* Body Silhouette SVG */}
+                        <div className="relative w-full h-full flex items-center justify-center">
+                            <svg viewBox="0 0 200 400" className="h-[90%] text-zinc-800 fill-current drop-shadow-[0_0_10px_rgba(0,0,0,0.8)]">
+                            <path d="M100,20 C115,20 125,35 125,50 C125,65 115,75 100,75 C85,75 75,65 75,50 C75,35 85,20 100,20 Z" className={agente.obliquo?.cabeca.dano! >= agente.obliquo?.cabeca.limite! ? "text-red-900 animate-pulse" : ""}/>
+                            <path d="M80,80 L120,80 L130,180 L70,180 Z" className={agente.obliquo?.torco.dano! >= agente.obliquo?.torco.limite! ? "text-red-900 animate-pulse" : ""}/>
+                            <path d="M135,80 L160,180 L150,190 L125,90 Z" className={agente.obliquo?.bracoDir.dano! >= agente.obliquo?.bracoDir.limite! ? "text-red-900 animate-pulse" : ""}/>
+                            <path d="M65,80 L40,180 L50,190 L75,90 Z" className={agente.obliquo?.bracoEsq.dano! >= agente.obliquo?.bracoEsq.limite! ? "text-red-900 animate-pulse" : ""}/>
+                            <path d="M80,185 L95,350 L75,360 L60,190 Z" className={agente.obliquo?.pernaEsq.dano! >= agente.obliquo?.pernaEsq.limite! ? "text-red-900 animate-pulse" : ""}/>
+                            <path d="M120,185 L105,350 L125,360 L140,190 Z" className={agente.obliquo?.pernaDir.dano! >= agente.obliquo?.pernaDir.limite! ? "text-red-900 animate-pulse" : ""}/>
+                            </svg>
+
+                            {/* Interactive Widgets */}
+                            {agente.obliquo && (
+                                <>
+                                    <ObliquePart name="CABEÇA" partKey="cabeca" data={agente.obliquo.cabeca} x="2%" y="5%" onUpdate={updateObliquo} />
+                                    <ObliquePart name="TRONCO" partKey="torco" data={agente.obliquo.torco} x="60%" y="5%" onUpdate={updateObliquo} />
+                                    <ObliquePart name="BRAÇO ESQ." partKey="bracoEsq" data={agente.obliquo.bracoEsq} x="2%" y="38%" onUpdate={updateObliquo} />
+                                    <ObliquePart name="BRAÇO DIR." partKey="bracoDir" data={agente.obliquo.bracoDir} x="60%" y="38%" onUpdate={updateObliquo} />
+                                    <ObliquePart name="PERNA ESQ." partKey="pernaEsq" data={agente.obliquo.pernaEsq} x="2%" y="72%" onUpdate={updateObliquo} />
+                                    <ObliquePart name="PERNA DIR." partKey="pernaDir" data={agente.obliquo.pernaDir} x="60%" y="72%" onUpdate={updateObliquo} />
+                                </>
+                            )}
+                        </div>
 
                         {/* Decorative Grid Lines */}
-                        <div className="absolute top-10 left-10 w-20 h-[1px] bg-ordem-red/50"></div>
-                        <div className="absolute top-10 left-10 w-[1px] h-20 bg-ordem-red/50"></div>
-                        <div className="absolute bottom-10 right-10 w-20 h-[1px] bg-ordem-red/50"></div>
-                        <div className="absolute bottom-10 right-10 w-[1px] h-20 bg-ordem-red/50"></div>
+                        <div className="absolute top-10 right-10 w-20 h-[1px] bg-ordem-red/50"></div>
+                        <div className="absolute top-10 right-10 w-[1px] h-20 bg-ordem-red/50"></div>
+                        <div className="absolute bottom-10 left-10 w-20 h-[1px] bg-ordem-red/50"></div>
+                        <div className="absolute bottom-10 left-10 w-[1px] h-20 bg-ordem-red/50"></div>
                     </div>
                 </div>
             </div>

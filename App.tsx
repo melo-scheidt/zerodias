@@ -88,15 +88,40 @@ const App: React.FC = () => {
     }
   }, [currentUser]);
 
-  // Realtime Subscription
+  // Realtime Subscription (Prioridade 1: Rápido)
   useEffect(() => {
       if (currentCampaign?.id && db.isOnline) {
           db.subscribeToCampaign(currentCampaign.id, (updatedCampaign) => {
-              console.log("App: Recebida atualização da campanha", updatedCampaign);
+              console.log("App: Recebida atualização Realtime da campanha", updatedCampaign);
               setCurrentCampaign(updatedCampaign);
           });
       }
   }, [currentCampaign?.id]);
+
+  // Polling Falback (Prioridade 2: Garantia a cada 3s)
+  useEffect(() => {
+    // Apenas jogadores fazem polling. O Mestre é a fonte da verdade local.
+    if (!currentCampaign?.id || !currentUser || currentUser.role === 'admin') return;
+
+    const intervalId = setInterval(async () => {
+        if (db.isOnline) {
+            const latest = await db.getCampaign();
+            if (latest) {
+                setCurrentCampaign(prev => {
+                    // Só atualiza se o timestamp do mapa mudou para evitar re-render desnecessário
+                    // ou se não tinhamos mapa antes
+                    if (!prev?.mapState || (latest.mapState && prev.mapState.timestamp !== latest.mapState.timestamp)) {
+                         console.log("App: Mapa atualizado via Polling (3s)");
+                         return latest;
+                    }
+                    return prev;
+                });
+            }
+        }
+    }, 3000);
+
+    return () => clearInterval(intervalId);
+  }, [currentCampaign?.id, currentUser]);
 
   const loadData = async () => {
       // Carrega TODOS os agentes do banco (sem filtro de ID)
