@@ -28,15 +28,15 @@ export const MapExplorer: React.FC<MapExplorerProps> = ({ savedAgents = [], curr
       if (currentCampaign?.mapState) {
           const { bgImage: serverBg, tokens: serverTokens } = currentCampaign.mapState;
           
-          // Only update BG if it changed to avoid flicker
+          // Sempre atualiza o BG se for diferente
           if (serverBg !== bgImage) setBgImage(serverBg);
           
-          // Update tokens if user is not dragging one currently
+          // Atualiza tokens sempre, a menos que o admin esteja arrastando um
           if (!isDraggingToken) {
               setTokens(serverTokens);
           }
       }
-  }, [currentCampaign]);
+  }, [currentCampaign]); // Dependência crucial para reatividade
 
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -156,8 +156,9 @@ export const MapExplorer: React.FC<MapExplorerProps> = ({ savedAgents = [], curr
                </div>
                {currentCampaign && (
                    <div className="mt-2 flex items-center gap-2 text-xs font-mono text-red-500 animate-pulse">
-                       <span className="w-2 h-2 rounded-full bg-red-600"></span>
-                       TRANSMISSÃO AO VIVO
+                       <Icons.Radio />
+                       <span className="w-2 h-2 rounded-full bg-red-600 shadow-[0_0_10px_#ef4444]"></span>
+                       AO VIVO (REALTIME)
                    </div>
                )}
            </div>
@@ -196,9 +197,9 @@ export const MapExplorer: React.FC<MapExplorerProps> = ({ savedAgents = [], curr
             )}
 
             {currentUser?.role !== 'admin' && (
-                <div className="bg-black/50 p-4 rounded text-center text-zinc-500 font-mono text-xs">
-                    <Icons.Radio />
-                    <p className="mt-2">Aguardando movimentação do Mestre.</p>
+                <div className="bg-black/50 p-4 rounded text-center text-zinc-500 font-mono text-xs border border-zinc-800">
+                    <Icons.Eye />
+                    <p className="mt-2">Visualizando transmissão tática do Mestre.</p>
                 </div>
             )}
        </div>

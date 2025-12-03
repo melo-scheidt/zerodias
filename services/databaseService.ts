@@ -52,7 +52,13 @@ class DatabaseService {
       try {
           if (!url.startsWith('http')) return { success: false, error: "URL inválida." };
           
-          const tempClient = createClient(url, key);
+          const tempClient = createClient(url, key, {
+              realtime: {
+                  params: {
+                      eventsPerSecond: 10,
+                  },
+              },
+          });
           
           // TESTE REAL DE CONEXÃO
           const { error } = await tempClient
@@ -104,28 +110,29 @@ class DatabaseService {
           this.supabase.removeChannel(this.campaignSubscription);
       }
 
-      console.log(`Iniciando escuta Realtime para campanha: ${campaignId}`);
+      console.log(`[DB] Iniciando escuta Realtime...`);
 
-      // Cria o canal de escuta para UPDATE na tabela documents onde ID = current_campaign
+      // Cria o canal de escuta para UPDATE na tabela documents
+      // O filtro id=eq.current_campaign garante que só escutamos a campanha ativa
       this.campaignSubscription = this.supabase
-          .channel('public:documents')
+          .channel('campaign_updates')
           .on(
               'postgres_changes',
               {
                   event: 'UPDATE',
                   schema: 'public',
                   table: 'documents',
-                  filter: `id=eq.current_campaign` // Escuta apenas a campanha ativa
+                  filter: 'id=eq.current_campaign' 
               },
               (payload) => {
-                  console.log("Realtime Update Recebido!", payload);
+                  console.log("[DB] Realtime Update Recebido!", payload);
                   if (payload.new && payload.new.data) {
                       onUpdate(payload.new.data as Campanha);
                   }
               }
           )
           .subscribe((status) => {
-              console.log("Status da Conexão Realtime:", status);
+              console.log("[DB] Status da Conexão Realtime:", status);
           });
   }
 
@@ -319,7 +326,6 @@ class DatabaseService {
         localStorage.setItem(KEYS.AGENTS, JSON.stringify(localAgents));
     } catch (e: any) {
         console.warn("Storage Quota Exceeded saving Agents. Attempting to strip heavy images locally.");
-        // Fallback: Remove imagens base64 muito grandes do save local para não travar
         const slimAgents = localAgents.map(a => ({
             ...a,
             imagem: a.imagem && a.imagem.length > 5000 ? '' : a.imagem
@@ -360,10 +366,11 @@ class DatabaseService {
   async getCampaign(): Promise<Campanha | null> {
     if (this.isOnline && this.supabase) {
         try {
+            // Importante: No modo single-campaign, usamos ID fixo 'current_campaign' no banco
             const { data } = await this.supabase
                 .from('documents')
                 .select('data')
-                .eq('collection', 'campaign_active')
+                .eq('id', 'current_campaign') 
                 .single();
             if (data) return data.data;
         } catch (e) { }
@@ -373,11 +380,11 @@ class DatabaseService {
   }
 
   async saveCampaign(campaign: Campanha): Promise<void> {
+    // Salva Local
     try {
         localStorage.setItem(KEYS.CAMPAIGN, JSON.stringify(campaign));
     } catch (e: any) {
         console.warn("Storage Quota Exceeded for Campaign. Removing heavy map data locally.");
-        // Fallback: Remove imagem de fundo do mapa localmente
         const slimCampaign = { ...campaign };
         if (slimCampaign.mapState && slimCampaign.mapState.bgImage) {
             slimCampaign.mapState = { ...slimCampaign.mapState, bgImage: null };
@@ -389,9 +396,10 @@ class DatabaseService {
         }
     }
     
+    // Salva Nuvem (Isso dispara o Realtime para outros)
     if (this.isOnline && this.supabase) {
         await this.supabase.from('documents').upsert({
-            id: 'current_campaign',
+            id: 'current_campaign', // Forçamos o ID fixo para garantir que todos estejam na mesma "sala"
             collection: 'campaign_active',
             data: campaign
         });

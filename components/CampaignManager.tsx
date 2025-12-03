@@ -15,6 +15,7 @@ export const CampaignManager: React.FC<CampaignManagerProps> = ({ currentCampaig
   const [inputCode, setInputCode] = useState('');
   const [createForm, setCreateForm] = useState({ nome: '', descricao: '', mestre: '' });
   const [loading, setLoading] = useState(false);
+  const [isImageFullscreen, setIsImageFullscreen] = useState(false);
 
   const generateCode = () => {
     const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -87,6 +88,35 @@ export const CampaignManager: React.FC<CampaignManagerProps> = ({ currentCampaig
       }
   }
 
+  const handleCampaignImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      if (file && currentCampaign) {
+          const reader = new FileReader();
+          reader.onload = (ev) => {
+              const result = ev.target?.result as string;
+              // Atualiza APENAS a imagem de capa da campanha, sem tocar no mapState (tático)
+              const updatedCampaign: Campanha = {
+                  ...currentCampaign,
+                  campaignImage: result
+              };
+              setCurrentCampaign(updatedCampaign);
+          };
+          reader.readAsDataURL(file);
+      }
+  };
+
+  const handleRemoveImage = (e: React.MouseEvent) => {
+      e.stopPropagation();
+      if (!currentCampaign) return;
+      if (confirm("Deseja remover a imagem atual da campanha?")) {
+          const updatedCampaign: Campanha = {
+              ...currentCampaign,
+              campaignImage: undefined // Remove a imagem
+          };
+          setCurrentCampaign(updatedCampaign);
+      }
+  };
+
   if (currentCampaign) {
       return (
         <div className="flex flex-col h-full bg-ordem-panel/50 rounded-lg border border-ordem-border relative overflow-hidden animate-in fade-in">
@@ -108,19 +138,70 @@ export const CampaignManager: React.FC<CampaignManagerProps> = ({ currentCampaig
 
              <div className="flex-1 p-6 grid grid-cols-1 md:grid-cols-3 gap-6 overflow-hidden">
                 {/* Mission Details */}
-                <div className="md:col-span-2 space-y-6">
+                <div className="md:col-span-2 space-y-6 flex flex-col">
                     <div className="bg-black/40 border border-zinc-800 p-4 rounded relative">
                         <h3 className="text-ordem-red font-display uppercase tracking-wider mb-2 flex items-center gap-2">
-                            <Icons.FileText /> Objetivo da Missão
+                            <Icons.FileText /> Objetivo da Missão / Lore
                         </h3>
                         <p className="font-mono text-zinc-300 text-sm leading-relaxed whitespace-pre-wrap">
                             {currentCampaign.descricao}
                         </p>
                     </div>
 
-                    <div className="bg-black/40 border border-zinc-800 p-4 rounded h-64 flex flex-col justify-center items-center text-zinc-600 border-dashed">
-                         <Icons.Map />
-                         <span className="mt-2 text-xs font-mono uppercase">Nenhum documento compartilhado no momento</span>
+                    <div className="bg-black/40 border border-zinc-800 p-4 rounded flex-1 flex flex-col justify-center items-center text-zinc-600 border-dashed relative overflow-hidden group min-h-[300px]">
+                         {currentCampaign.campaignImage ? (
+                             <>
+                                {/* Imagem adaptada para aparecer inteira (contain) */}
+                                <img 
+                                    src={currentCampaign.campaignImage} 
+                                    className="absolute inset-0 w-full h-full object-contain bg-black/50" 
+                                    alt="Imagem da Campanha" 
+                                />
+                                
+                                {/* Botões de Controle da Imagem (Hover) */}
+                                <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-4">
+                                     
+                                     {/* Botão de Tela Cheia (Todos) */}
+                                     <button 
+                                        onClick={() => setIsImageFullscreen(true)}
+                                        className="bg-black/80 hover:bg-white hover:text-black text-white p-3 rounded-full border border-white/20 transition-all transform hover:scale-110 shadow-lg backdrop-blur"
+                                        title="Maximizar / Tela Cheia"
+                                     >
+                                         <Icons.Maximize />
+                                     </button>
+
+                                     {/* Botão de Trocar Imagem (Admin) */}
+                                     {currentUser.role === 'admin' && (
+                                         <label className="cursor-pointer bg-zinc-900/90 hover:bg-ordem-gold hover:text-black text-white p-3 rounded-full border border-zinc-600 transition-all transform hover:scale-110 shadow-lg backdrop-blur" title="Alterar Imagem">
+                                            <Icons.Upload />
+                                            <input type="file" accept="image/*" className="hidden" onChange={handleCampaignImageUpload} />
+                                         </label>
+                                     )}
+
+                                     {/* Botão de Remover Imagem (Admin) */}
+                                     {currentUser.role === 'admin' && (
+                                         <button 
+                                            onClick={handleRemoveImage}
+                                            className="bg-red-900/80 hover:bg-red-600 text-white p-3 rounded-full border border-red-500/50 transition-all transform hover:scale-110 shadow-lg backdrop-blur"
+                                            title="Remover Imagem"
+                                         >
+                                             <Icons.Trash />
+                                         </button>
+                                     )}
+                                </div>
+                             </>
+                         ) : (
+                             <>
+                                <Icons.Map />
+                                <span className="mt-2 text-xs font-mono uppercase mb-4">Nenhuma imagem definida</span>
+                                {currentUser.role === 'admin' && (
+                                    <label className="cursor-pointer bg-zinc-900 hover:bg-zinc-800 text-zinc-300 px-4 py-2 rounded text-xs uppercase border border-zinc-700 flex items-center gap-2 transition-colors hover:text-white hover:border-ordem-gold">
+                                        <Icons.Upload /> Selecionar Imagem da Campanha
+                                        <input type="file" accept="image/*" className="hidden" onChange={handleCampaignImageUpload} />
+                                    </label>
+                                )}
+                             </>
+                         )}
                     </div>
                 </div>
 
@@ -149,6 +230,30 @@ export const CampaignManager: React.FC<CampaignManagerProps> = ({ currentCampaig
                      Abandonar Missão
                  </button>
              </div>
+
+            {/* FULLSCREEN IMAGE MODAL */}
+            {isImageFullscreen && currentCampaign.campaignImage && (
+                <div 
+                    className="fixed inset-0 z-[9999] bg-black/95 backdrop-blur-md flex items-center justify-center p-4"
+                    onClick={() => setIsImageFullscreen(false)} // Fecha ao clicar fora
+                >
+                    {/* Botão Fechar */}
+                    <button 
+                        onClick={() => setIsImageFullscreen(false)}
+                        className="absolute top-4 right-4 text-zinc-500 hover:text-white p-2 rounded-full border border-zinc-700 hover:border-white transition-all"
+                    >
+                        <span className="text-xl font-bold px-2">X</span>
+                    </button>
+                    
+                    <img 
+                        src={currentCampaign.campaignImage} 
+                        alt="Campanha Tela Cheia" 
+                        className="max-w-full max-h-full object-contain shadow-2xl drop-shadow-[0_0_50px_rgba(0,0,0,0.8)]"
+                        onClick={(e) => e.stopPropagation()} // Impede fechar ao clicar na imagem
+                    />
+                </div>
+            )}
+
         </div>
       );
   }

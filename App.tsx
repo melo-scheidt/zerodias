@@ -90,28 +90,36 @@ const App: React.FC = () => {
 
   // Realtime Subscription (Prioridade 1: Rápido)
   useEffect(() => {
-      if (currentCampaign?.id && db.isOnline) {
-          db.subscribeToCampaign(currentCampaign.id, (updatedCampaign) => {
-              console.log("App: Recebida atualização Realtime da campanha", updatedCampaign);
+      // Se houver uma campanha carregada, inscreve-se para ouvir mudanças
+      // Mesmo que o ID mude, a subscrição deve atualizar
+      if (db.isOnline) {
+          // O ID aqui é apenas para referência no log, pois o databaseService 
+          // está configurado para ouvir o ID 'current_campaign' fixo para simplificação
+          db.subscribeToCampaign('current_campaign', (updatedCampaign) => {
+              console.log("[App] Recebida atualização Realtime da campanha", updatedCampaign);
               setCurrentCampaign(updatedCampaign);
           });
       }
-  }, [currentCampaign?.id]);
+      
+      return () => {
+         // Opcional: Desinscrever ao desmontar, mas db.disconnect() já faz isso no logout
+      };
+  }, [currentUser]); // Re-executa se o usuário mudar (login/logout)
 
   // Polling Falback (Prioridade 2: Garantia a cada 3s)
   useEffect(() => {
-    // Apenas jogadores fazem polling. O Mestre é a fonte da verdade local.
-    if (!currentCampaign?.id || !currentUser || currentUser.role === 'admin') return;
+    // Apenas jogadores fazem polling. O Mestre é a fonte da verdade local, 
+    // mas o Realtime deve ser suficiente. Isso é backup.
+    if (!currentUser || currentUser.role === 'admin') return;
 
     const intervalId = setInterval(async () => {
         if (db.isOnline) {
             const latest = await db.getCampaign();
             if (latest) {
                 setCurrentCampaign(prev => {
-                    // Só atualiza se o timestamp do mapa mudou para evitar re-render desnecessário
-                    // ou se não tinhamos mapa antes
-                    if (!prev?.mapState || (latest.mapState && prev.mapState.timestamp !== latest.mapState.timestamp)) {
-                         console.log("App: Mapa atualizado via Polling (3s)");
+                    // Atualiza se houver mudança de timestamp no mapa ou se não tinhamos campanha
+                    if (!prev || (latest.mapState && prev.mapState?.timestamp !== latest.mapState?.timestamp)) {
+                         console.log("[App] Mapa atualizado via Polling (3s)");
                          return latest;
                     }
                     return prev;
@@ -121,7 +129,7 @@ const App: React.FC = () => {
     }, 3000);
 
     return () => clearInterval(intervalId);
-  }, [currentCampaign?.id, currentUser]);
+  }, [currentUser]);
 
   const loadData = async () => {
       // Carrega TODOS os agentes do banco (sem filtro de ID)

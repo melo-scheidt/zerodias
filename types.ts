@@ -167,6 +167,7 @@ export interface Campanha {
   jogadores: Jogador[];
   dataCriacao: number;
   mapState?: MapState; // Estado compartilhado da mesa tática
+  campaignImage?: string; // Imagem de capa/lore da campanha (não afeta o mapa tático)
 }
 
 export interface LibraryDocument {
