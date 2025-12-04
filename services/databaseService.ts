@@ -110,7 +110,7 @@ class DatabaseService {
           this.supabase.removeChannel(this.campaignSubscription);
       }
 
-      console.log(`[DB] Iniciando escuta Realtime...`);
+      console.log(`[DB] Iniciando escuta Realtime para: ${campaignId}`);
 
       // Cria o canal de escuta para UPDATE na tabela documents
       // O filtro id=eq.current_campaign garante que só escutamos a campanha ativa
@@ -122,7 +122,7 @@ class DatabaseService {
                   event: 'UPDATE',
                   schema: 'public',
                   table: 'documents',
-                  filter: 'id=eq.current_campaign' 
+                  filter: `id=eq.${campaignId}` 
               },
               (payload) => {
                   console.log("[DB] Realtime Update Recebido!", payload);
@@ -425,9 +425,9 @@ class DatabaseService {
   // --- CAMPANHA ---
 
   async getCampaign(): Promise<Campanha | null> {
+    // 1. Tenta buscar no Supabase (Nuvem)
     if (this.isOnline && this.supabase) {
         try {
-            // Importante: No modo single-campaign, usamos ID fixo 'current_campaign' no banco
             const { data } = await this.supabase
                 .from('documents')
                 .select('data')
@@ -436,11 +436,25 @@ class DatabaseService {
             if (data) return data.data;
         } catch (e) { }
     }
+    
+    // 2. Tenta buscar no LocalStorage, mas SÓ retorna se o ID for 'current_campaign'
     const data = localStorage.getItem(KEYS.CAMPAIGN);
-    return data ? JSON.parse(data) : null;
+    const parsed = data ? JSON.parse(data) : null;
+    
+    // FILTRO DE SEGURANÇA:
+    // Se a campanha local não tiver o ID oficial, ignoramos (retorna null).
+    // Isso evita carregar "Lixo" de testes anteriores ou outras missões.
+    if (parsed && parsed.id === 'current_campaign') {
+        return parsed;
+    }
+
+    return null;
   }
 
   async saveCampaign(campaign: Campanha): Promise<void> {
+    // Força o ID para garantir consistência
+    campaign.id = 'current_campaign';
+
     // Salva Local
     try {
         localStorage.setItem(KEYS.CAMPAIGN, JSON.stringify(campaign));
@@ -460,7 +474,7 @@ class DatabaseService {
     // Salva Nuvem (Isso dispara o Realtime para outros)
     if (this.isOnline && this.supabase) {
         await this.supabase.from('documents').upsert({
-            id: 'current_campaign', // Forçamos o ID fixo para garantir que todos estejam na mesma "sala"
+            id: 'current_campaign',
             collection: 'campaign_active',
             data: campaign
         });

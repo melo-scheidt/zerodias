@@ -14,19 +14,12 @@ import { PdfLibrary } from './components/PdfLibrary';
 import { LoginScreen } from './components/LoginScreen';
 import { db } from './services/databaseService';
 
-const App: React.FC = () => {
-  // Estado inicial do usuário é null (deslogado)
-  const [currentUser, setCurrentUser] = useState<User | null>(null);
-  const [activeTab, setActiveTab] = useState<'gallery' | 'ficha' | 'mapa' | 'dados' | 'ia' | 'campanha' | 'regras' | 'pdfs' | 'config'>('gallery');
-  const [currentCampaign, setCurrentCampaign] = useState<Campanha | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
-  
-  // LORE E DADOS OBRIGATÓRIOS DA MISSÃO
-  const OFFICIAL_MISSION_DATA: Campanha = {
-      id: 'current_campaign',
-      nome: "Ecos do Parque Verde",
-      mestre: "Thiago",
-      descricao: `Um grupo de amigos viaja para uma cidade isolada no interior do Brasil, como uma pequena localidade no Pará próxima ao Bairro Parque Verde, onde eventos paranormais irrompem subitamente, forçando-os a investigar para sobreviver e proteger uns aos outros.
+// LORE E DADOS OBRIGATÓRIOS DA MISSÃO (Definido fora para ser imutável)
+const OFFICIAL_MISSION_DATA: Campanha = {
+    id: 'current_campaign',
+    nome: "Ecos do Parque Verde",
+    mestre: "Thiago",
+    descricao: `Um grupo de amigos viaja para uma cidade isolada no interior do Brasil, como uma pequena localidade no Pará próxima ao Bairro Parque Verde, onde eventos paranormais irrompem subitamente, forçando-os a investigar para sobreviver e proteger uns aos outros.
 
 Ganchos Iniciais de Investigação:
 Os amigos chegam para uma viagem casual, como férias ou um encontro de reencontro, mas logo enfrentam fenômenos como desaparecimentos misteriosos de moradores, vozes sussurrantes à noite e sombras que se movem sozinhas, reminiscentes de casos da Ordo Realitas.
@@ -34,15 +27,22 @@ Os amigos chegam para uma viagem casual, como férias ou um encontro de reencont
 Um deles presencia um acidente bizarro, como um carro que some em uma estrada e reaparece destruído com símbolos paranormais, criando o motivo urgente: eles percebem que o paranormal está se espalhando e decide investigar para impedir que atinja o grupo inteiro.
 
 Com a expansão da Fenda, rachaduras na realidade liberam entidades que misturam passado e presente, como visões de antepassados ou objetos do futuro aparecendo, escalando a ameaça.`,
-      dataCriacao: Date.now(),
-      jogadores: [],
-      mapState: {
-          bgImage: null,
-          tokens: [],
-          timestamp: Date.now()
-      }
-  };
+    dataCriacao: Date.now(),
+    jogadores: [],
+    mapState: {
+        bgImage: null,
+        tokens: [],
+        timestamp: Date.now()
+    }
+};
 
+const App: React.FC = () => {
+  // Estado inicial do usuário é null (deslogado)
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [activeTab, setActiveTab] = useState<'gallery' | 'ficha' | 'mapa' | 'dados' | 'ia' | 'campanha' | 'regras' | 'pdfs' | 'config'>('gallery');
+  const [currentCampaign, setCurrentCampaign] = useState<Campanha | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  
   // Template base
   const createDefaultAgent = (): Agente => ({
     id: Date.now().toString(),
@@ -110,13 +110,24 @@ Com a expansão da Fenda, rachaduras na realidade liberam entidades que misturam
     }
   }, [currentUser]);
 
+  // Função de segurança que força a Lore correta em qualquer objeto de campanha
+  const enforceOfficialLore = (c: Campanha): Campanha => ({
+      ...c,
+      id: 'current_campaign', // Força ID
+      nome: OFFICIAL_MISSION_DATA.nome,
+      descricao: OFFICIAL_MISSION_DATA.descricao,
+      mestre: OFFICIAL_MISSION_DATA.mestre
+      // Os campos 'jogadores' e 'mapState' são preservados do objeto original (c)
+  });
+
   // Realtime Subscription (Prioridade 1: Rápido e Dinâmico)
   useEffect(() => {
       if (db.isOnline) {
           // Usa um ID fixo para a assinatura, garantindo que todos ouçam o mesmo canal
           db.subscribeToCampaign('current_campaign', (updatedCampaign) => {
               console.log(`[App] Recebida atualização Realtime da Campanha Oficial`, updatedCampaign);
-              setCurrentCampaign(updatedCampaign);
+              // APLICA O ENFORCE AQUI TAMBÉM: Se o banco mandar algo errado, corrigimos na visualização
+              setCurrentCampaign(enforceOfficialLore(updatedCampaign));
           });
       }
       
@@ -131,11 +142,14 @@ Com a expansão da Fenda, rachaduras na realidade liberam entidades que misturam
 
     const intervalId = setInterval(async () => {
         if (db.isOnline) {
-            const latest = await db.getCampaign();
+            let latest = await db.getCampaign();
             if (latest) {
+                // APLICA O ENFORCE AQUI TAMBÉM
+                latest = enforceOfficialLore(latest);
+                
                 setCurrentCampaign(prev => {
                     // Se não temos campanha local, ou se a do servidor é mais nova (mapa), atualiza
-                    if (!prev || (latest.mapState && prev.mapState?.timestamp !== latest.mapState?.timestamp) || prev.id !== latest.id) {
+                    if (!prev || (latest && latest.mapState && prev.mapState?.timestamp !== latest.mapState?.timestamp) || prev.id !== latest?.id) {
                          return latest;
                     }
                     return prev;
@@ -174,29 +188,35 @@ Com a expansão da Fenda, rachaduras na realidade liberam entidades que misturam
          setAgente(initial);
       }
 
-      // LÓGICA DE MISSÃO ÚNICA (FORÇADA)
+      // LÓGICA DE MISSÃO ÚNICA (FORÇADA E SEGURA)
       let campaign = await db.getCampaign();
       
-      // Se não existir campanha no banco, instanciar a Oficial imediatamente
-      if (!campaign) {
-          console.log("Campanha não encontrada. Inicializando Protocolo 'Ecos do Parque Verde'...");
+      if (campaign) {
+          // Se encontrou algo no banco, SOBRESCREVE a lore para garantir que é a missão certa
+          // Isso corrige o problema do usuário "ser redirecionado para missão aleatória"
+          // mantendo apenas os dados de jogadores e mapa que vieram do banco.
+          campaign = enforceOfficialLore(campaign);
+      } else {
+          // Se não existir, cria a oficial do zero
+          console.log("Inicializando Protocolo 'Ecos do Parque Verde' (Novo)...");
           campaign = { ...OFFICIAL_MISSION_DATA };
-          
-          // Adiciona o usuário atual à lista se não estiver
-          if (!campaign.jogadores.find(j => j.id === currentUser?.id)) {
-              campaign.jogadores.push({
-                  id: currentUser!.id,
-                  nome: currentUser!.username,
-                  classe: agente.classe,
-                  isMestre: currentUser!.role === 'admin',
-                  status: 'Online'
-              });
-          }
+      }
 
-          // Se for admin, salva no banco para persistir para todos
-          if (currentUser?.role === 'admin') {
-              await db.saveCampaign(campaign);
-          }
+      // Adiciona o usuário atual à lista se não estiver
+      if (!campaign.jogadores.find(j => j.id === currentUser?.id)) {
+          campaign.jogadores.push({
+              id: currentUser!.id,
+              nome: currentUser!.username,
+              classe: agente.classe,
+              isMestre: currentUser!.role === 'admin',
+              status: 'Online'
+          });
+      }
+
+      // Se for admin, salva no banco para persistir a correção para todos
+      // Isso "conserta" o banco caso ele estivesse com dados errados
+      if (currentUser?.role === 'admin') {
+          await db.saveCampaign(campaign);
       }
 
       setCurrentCampaign(campaign);
