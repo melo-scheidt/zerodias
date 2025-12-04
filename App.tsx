@@ -21,6 +21,28 @@ const App: React.FC = () => {
   const [currentCampaign, setCurrentCampaign] = useState<Campanha | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   
+  // LORE E DADOS OBRIGATÓRIOS DA MISSÃO
+  const OFFICIAL_MISSION_DATA: Campanha = {
+      id: 'current_campaign',
+      nome: "Ecos do Parque Verde",
+      mestre: "Thiago",
+      descricao: `Um grupo de amigos viaja para uma cidade isolada no interior do Brasil, como uma pequena localidade no Pará próxima ao Bairro Parque Verde, onde eventos paranormais irrompem subitamente, forçando-os a investigar para sobreviver e proteger uns aos outros.
+
+Ganchos Iniciais de Investigação:
+Os amigos chegam para uma viagem casual, como férias ou um encontro de reencontro, mas logo enfrentam fenômenos como desaparecimentos misteriosos de moradores, vozes sussurrantes à noite e sombras que se movem sozinhas, reminiscentes de casos da Ordo Realitas.
+
+Um deles presencia um acidente bizarro, como um carro que some em uma estrada e reaparece destruído com símbolos paranormais, criando o motivo urgente: eles percebem que o paranormal está se espalhando e decide investigar para impedir que atinja o grupo inteiro.
+
+Com a expansão da Fenda, rachaduras na realidade liberam entidades que misturam passado e presente, como visões de antepassados ou objetos do futuro aparecendo, escalando a ameaça.`,
+      dataCriacao: Date.now(),
+      jogadores: [],
+      mapState: {
+          bgImage: null,
+          tokens: [],
+          timestamp: Date.now()
+      }
+  };
+
   // Template base
   const createDefaultAgent = (): Agente => ({
     id: Date.now().toString(),
@@ -90,39 +112,30 @@ const App: React.FC = () => {
 
   // Realtime Subscription (Prioridade 1: Rápido e Dinâmico)
   useEffect(() => {
-      // Se houver uma campanha carregada, inscreve-se para ouvir mudanças
-      // Importante: Ouve o ID específico da campanha atual, não 'current_campaign' estático
-      if (db.isOnline && currentCampaign?.id) {
-          db.subscribeToCampaign(currentCampaign.id, (updatedCampaign) => {
-              console.log(`[App] Recebida atualização Realtime da campanha ${currentCampaign.id}`, updatedCampaign);
-              // Atualiza o estado apenas se os dados forem relevantes
-              setCurrentCampaign(prev => {
-                  if (prev?.id === updatedCampaign.id) return updatedCampaign;
-                  return prev;
-              });
+      if (db.isOnline) {
+          // Usa um ID fixo para a assinatura, garantindo que todos ouçam o mesmo canal
+          db.subscribeToCampaign('current_campaign', (updatedCampaign) => {
+              console.log(`[App] Recebida atualização Realtime da Campanha Oficial`, updatedCampaign);
+              setCurrentCampaign(updatedCampaign);
           });
       }
       
       return () => {
-         // Opcional: Desinscrever ao desmontar ou trocar de campanha
+         // Cleanup se necessário
       };
-  }, [currentCampaign?.id, currentUser]); // Re-executa se o ID da campanha mudar
+  }, [db.isOnline]); 
 
-  // Polling Falback (Prioridade 2: Garantia a cada 3s)
+  // Polling Fallback (Prioridade 2: Garantia a cada 3s)
   useEffect(() => {
-    // Apenas jogadores fazem polling. O Mestre é a fonte da verdade local, 
-    // mas o Realtime deve ser suficiente. Isso é backup.
-    if (!currentUser || currentUser.role === 'admin' || !currentCampaign?.id) return;
+    if (!currentUser || currentUser.role === 'admin') return;
 
     const intervalId = setInterval(async () => {
         if (db.isOnline) {
-            // Busca especificamente pelo ID da campanha atual
             const latest = await db.getCampaign();
             if (latest) {
                 setCurrentCampaign(prev => {
-                    // Atualiza se houver mudança de timestamp no mapa ou se não tinhamos campanha
-                    if (!prev || (latest.mapState && prev.mapState?.timestamp !== latest.mapState?.timestamp)) {
-                         console.log("[App] Mapa atualizado via Polling (3s)");
+                    // Se não temos campanha local, ou se a do servidor é mais nova (mapa), atualiza
+                    if (!prev || (latest.mapState && prev.mapState?.timestamp !== latest.mapState?.timestamp) || prev.id !== latest.id) {
                          return latest;
                     }
                     return prev;
@@ -132,7 +145,7 @@ const App: React.FC = () => {
     }, 3000);
 
     return () => clearInterval(intervalId);
-  }, [currentUser, currentCampaign?.id]);
+  }, [currentUser]);
 
   const loadData = async () => {
       // Carrega TODOS os agentes do banco (sem filtro de ID)
@@ -161,9 +174,32 @@ const App: React.FC = () => {
          setAgente(initial);
       }
 
-      // Ao carregar, não puxamos campanha automaticamente para não forçar sala errada.
-      // O usuário deve entrar via código ou criar nova.
-      setCurrentCampaign(null);
+      // LÓGICA DE MISSÃO ÚNICA (FORÇADA)
+      let campaign = await db.getCampaign();
+      
+      // Se não existir campanha no banco, instanciar a Oficial imediatamente
+      if (!campaign) {
+          console.log("Campanha não encontrada. Inicializando Protocolo 'Ecos do Parque Verde'...");
+          campaign = { ...OFFICIAL_MISSION_DATA };
+          
+          // Adiciona o usuário atual à lista se não estiver
+          if (!campaign.jogadores.find(j => j.id === currentUser?.id)) {
+              campaign.jogadores.push({
+                  id: currentUser!.id,
+                  nome: currentUser!.username,
+                  classe: agente.classe,
+                  isMestre: currentUser!.role === 'admin',
+                  status: 'Online'
+              });
+          }
+
+          // Se for admin, salva no banco para persistir para todos
+          if (currentUser?.role === 'admin') {
+              await db.saveCampaign(campaign);
+          }
+      }
+
+      setCurrentCampaign(campaign);
   };
 
   // Auto-Save Agent
@@ -355,7 +391,6 @@ const App: React.FC = () => {
                       currentCampaign={currentCampaign} 
                       setCurrentCampaign={(c) => {
                           if (c) db.saveCampaign(c);
-                          else db.deleteCampaign();
                           setCurrentCampaign(c);
                       }}
                       playerAgent={agente}
