@@ -1,13 +1,13 @@
 
-import { Agente, Campanha, User, LibraryDocument } from '../types';
+import { Agente, Campanha, User, LibraryLink } from '../types';
 import { createClient, SupabaseClient, RealtimeChannel } from '@supabase/supabase-js';
 
 const KEYS = {
   AGENTS: 'op_database_agents_v1',
   CAMPAIGN: 'op_database_campaign_v1',
   USERS: 'op_database_users_v1',
-  CREDS: 'op_supabase_creds',
-  LIBRARY: 'op_database_library_v1'
+  LIBRARY: 'op_database_library_v1',
+  CREDS: 'op_supabase_creds'
 };
 
 // Credenciais fornecidas
@@ -264,13 +264,13 @@ class DatabaseService {
           });
       }
 
-      // Preparar Biblioteca
+      // Preparar Library
       if (Array.isArray(data.library)) {
-          data.library.forEach((doc: LibraryDocument) => {
+          data.library.forEach((link: LibraryLink) => {
               updates.push({
-                  id: doc.id,
+                  id: link.id,
                   collection: 'library',
-                  data: doc
+                  data: link
               });
           });
       }
@@ -292,6 +292,67 @@ class DatabaseService {
           
           if (error) console.error("Erro ao sincronizar backup com Supabase:", error);
           else console.log("Backup sincronizado com sucesso para a nuvem.");
+      }
+  }
+
+  // --- LIBRARY (Links) ---
+  
+  async listLibraryLinks(): Promise<LibraryLink[]> {
+      if (this.isOnline && this.supabase) {
+          try {
+              const { data, error } = await this.supabase
+                  .from('documents')
+                  .select('data')
+                  .eq('collection', 'library');
+              
+              if (!error && data) {
+                  return data.map((row: any) => row.data);
+              }
+          } catch(e) { console.warn("Erro Supabase Library, fallback local"); }
+      }
+      
+      const data = localStorage.getItem(KEYS.LIBRARY);
+      return data ? JSON.parse(data) : [];
+  }
+
+  async saveLibraryLink(link: LibraryLink): Promise<void> {
+      // Local
+      const localLinks = await this.listLibraryLinks();
+      const index = localLinks.findIndex(l => l.id === link.id);
+      if (index >= 0) localLinks[index] = link;
+      else localLinks.push(link);
+      localStorage.setItem(KEYS.LIBRARY, JSON.stringify(localLinks));
+
+      // Cloud
+      if (this.isOnline && this.supabase) {
+          await this.supabase.from('documents').upsert({
+              id: link.id,
+              collection: 'library',
+              data: link
+          });
+      }
+  }
+
+  async deleteLibraryLink(id: string): Promise<void> {
+      let localLinks = await this.listLibraryLinks();
+      localLinks = localLinks.filter(l => l.id !== id);
+      localStorage.setItem(KEYS.LIBRARY, JSON.stringify(localLinks));
+
+      if (this.isOnline && this.supabase) {
+          await this.supabase.from('documents').delete().eq('id', id);
+      }
+  }
+
+  async clearLibrary(): Promise<void> {
+      // Limpa Local
+      localStorage.setItem(KEYS.LIBRARY, JSON.stringify([]));
+
+      // Limpa Nuvem
+      if (this.isOnline && this.supabase) {
+          await this.supabase
+            .from('documents')
+            .delete()
+            .eq('collection', 'library');
       }
   }
 
@@ -411,58 +472,6 @@ class DatabaseService {
     if (this.isOnline && this.supabase) {
         await this.supabase.from('documents').delete().eq('id', 'current_campaign');
     }
-  }
-
-  // --- BIBLIOTECA DE PDFS ---
-
-  async listDocuments(): Promise<LibraryDocument[]> {
-    if (this.isOnline && this.supabase) {
-      try {
-        const { data, error } = await this.supabase
-          .from('documents')
-          .select('data')
-          .eq('collection', 'library');
-        if (!error && data) return data.map((row: any) => row.data);
-      } catch (e) {}
-    }
-    const data = localStorage.getItem(KEYS.LIBRARY);
-    return data ? JSON.parse(data) : [];
-  }
-
-  async saveDocument(doc: LibraryDocument): Promise<void> {
-    // Tenta salvar localmente, mas se for muito grande (PDF Base64), ignora erro e foca na nuvem
-    try {
-        const localDocs = await this.listDocumentsLocal();
-        // Remove versão anterior se existir
-        const filteredDocs = localDocs.filter(d => d.id !== doc.id);
-        filteredDocs.push(doc);
-        localStorage.setItem(KEYS.LIBRARY, JSON.stringify(filteredDocs));
-    } catch (e) {
-        console.warn("PDF muito grande para LocalStorage. Tentando salvar apenas na Nuvem.");
-    }
-
-    if (this.isOnline && this.supabase) {
-      await this.supabase.from('documents').upsert({
-        id: doc.id,
-        collection: 'library',
-        data: doc
-      });
-    }
-  }
-
-  async deleteDocument(id: string): Promise<void> {
-    let localDocs = await this.listDocumentsLocal();
-    localDocs = localDocs.filter(d => d.id !== id);
-    localStorage.setItem(KEYS.LIBRARY, JSON.stringify(localDocs));
-
-    if (this.isOnline && this.supabase) {
-      await this.supabase.from('documents').delete().eq('id', id);
-    }
-  }
-
-  private async listDocumentsLocal(): Promise<LibraryDocument[]> {
-    const data = localStorage.getItem(KEYS.LIBRARY);
-    return data ? JSON.parse(data) : [];
   }
 }
 

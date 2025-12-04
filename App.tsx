@@ -368,7 +368,9 @@ const App: React.FC = () => {
                   />
               )}
               {activeTab === 'regras' && <MechanicsReference />}
-              {activeTab === 'pdfs' && <PdfLibrary />}
+              {activeTab === 'pdfs' && (
+                  <PdfLibrary currentUser={currentUser} />
+              )}
               
               {/* Admin Only Tabs */}
               {activeTab === 'ia' && currentUser.role === 'admin' && (

@@ -23,6 +23,14 @@ export interface User {
   password?: string; // Simulado
 }
 
+export interface LibraryLink {
+  id: string;
+  title: string;
+  url: string;
+  addedBy: string;
+  date: number;
+}
+
 export interface Atributos {
   agi: number;
   for: number;
@@ -168,12 +176,4 @@ export interface Campanha {
   dataCriacao: number;
   mapState?: MapState; // Estado compartilhado da mesa tática
   campaignImage?: string; // Imagem de capa/lore da campanha (não afeta o mapa tático)
-}
-
-export interface LibraryDocument {
-  id: string;
-  title: string;
-  url: string;
-  type: 'link' | 'local'; // link = salvo no banco, local = blob temporário
-  addedBy?: string;
 }
