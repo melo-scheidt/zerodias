@@ -69,25 +69,13 @@ Documentação de todas as alterações realizadas
 ## 📦 Estrutura Final do Projeto
 
 ```
-ordem-vercel-v2/
+ordem-vercel-v3/
 ├── components/              # Componentes React (sem alterações)
-│   ├── CampaignManager.tsx
-│   ├── CharacterGallery.tsx
-│   ├── CharacterSheet.tsx
-│   ├── DiceRoller.tsx
-│   ├── InvestigatorAssistant.tsx
-│   ├── LoginScreen.tsx
-│   ├── MapExplorer.tsx
-│   ├── MechanicsReference.tsx
-│   ├── PdfLibrary.tsx
-│   └── Settings.tsx
 ├── services/               # Serviços (sem alterações)
-│   ├── databaseService.ts
-│   └── geminiService.ts
 ├── App.tsx                # Componente principal (sem alterações)
 ├── constants.tsx          # Constantes (sem alterações)
-├── index.tsx             # Entry point (sem alterações)
 ├── types.ts              # Tipos TypeScript (sem alterações)
+├── index.tsx             # Entry point (sem alterações)
 ├── index.html            # Template HTML (sem alterações)
 ├── package.json          # Dependências (sem alterações)
 ├── tsconfig.json         # Config TypeScript (sem alterações)
@@ -185,4 +173,4 @@ O projeto está 100% pronto para deploy no Vercel! Todas as configurações nece
 
 ## 📌 Versão
 
-Esta é a **versão 2** do projeto adaptado para Vercel, baseada no arquivo `o-outro-lado---ordem-companion(15).zip`.
+Esta é a **versão 3** do projeto adaptado para Vercel, baseada no arquivo `o-outro-lado---ordem-companion(18).zip`.

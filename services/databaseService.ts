@@ -11,8 +11,8 @@ const KEYS = {
 };
 
 // Credenciais fornecidas
-const DEFAULT_SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || "";
-const DEFAULT_SUPABASE_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || "";
+const DEFAULT_SUPABASE_URL = "https://ndhdrsqiunxynmgojmha.supabase.co";
+const DEFAULT_SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5kaGRyc3FpdW54eW5tZ29qbWhhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjQ2MjQwNzMsImV4cCI6MjA4MDIwMDA3M30.Hi7voWo2271XGYcKSDn3vqg58zZ6F5KqMbCPW0-px9U";
 
 class DatabaseService {
   private supabase: SupabaseClient | null = null;
@@ -33,19 +33,14 @@ class DatabaseService {
           const { url, key } = JSON.parse(creds);
           await this.connect(url, key);
       } else {
-          // 2. Conexão automática com as chaves padrão (se existirem)
-          if (DEFAULT_SUPABASE_URL && DEFAULT_SUPABASE_KEY) {
-              console.log("Inicializando conexão padrão com Supabase...");
-              await this.connect(DEFAULT_SUPABASE_URL, DEFAULT_SUPABASE_KEY);
-          }
+          // 2. Conexão automática com as chaves padrão
+          console.log("Inicializando conexão padrão com Supabase...");
+          await this.connect(DEFAULT_SUPABASE_URL, DEFAULT_SUPABASE_KEY);
       }
   }
 
   public async connectDefault(): Promise<{ success: boolean; error?: string }> {
-      if (DEFAULT_SUPABASE_URL && DEFAULT_SUPABASE_KEY) {
-          return this.connect(DEFAULT_SUPABASE_URL, DEFAULT_SUPABASE_KEY);
-      }
-      return { success: false, error: "Credenciais Supabase não configuradas." };
+      return this.connect(DEFAULT_SUPABASE_URL, DEFAULT_SUPABASE_KEY);
   }
 
   public async connect(url: string, key: string): Promise<{ success: boolean; error?: string }> {
@@ -80,6 +75,10 @@ class DatabaseService {
           this.supabase = tempClient;
           localStorage.setItem(KEYS.CREDS, JSON.stringify({ url, key }));
           this.isOnline = true;
+          
+          // CRIA OS USUÁRIOS PADRÃO (Isadora/Thiago)
+          await this.ensureDefaultUsers();
+
           return { success: true };
 
       } catch (e: any) {
@@ -105,15 +104,12 @@ class DatabaseService {
   public subscribeToCampaign(campaignId: string, onUpdate: (data: Campanha) => void) {
       if (!this.supabase || !this.isOnline) return;
 
-      // Remove assinatura anterior se existir
       if (this.campaignSubscription) {
           this.supabase.removeChannel(this.campaignSubscription);
       }
 
       console.log(`[DB] Iniciando escuta Realtime para: ${campaignId}`);
 
-      // Cria o canal de escuta para UPDATE na tabela documents
-      // O filtro id=eq.current_campaign garante que só escutamos a campanha ativa
       this.campaignSubscription = this.supabase
           .channel('campaign_updates')
           .on(
@@ -138,6 +134,35 @@ class DatabaseService {
 
   // --- AUTH ---
 
+  // Método para garantir que contas essenciais existam
+  private async ensureDefaultUsers() {
+      const users = await this.listUsers();
+      
+      // 1. Garante a conta 'isadora'
+      if (!users.find(u => u.username.toLowerCase() === 'isadora')) {
+          const isadora: User = {
+              id: 'user_isadora_01',
+              username: 'isadora',
+              password: '3040',
+              role: 'player'
+          };
+          await this.saveUser(isadora);
+          console.log("Conta 'isadora' criada com sucesso.");
+      }
+
+      // 2. Garante a conta 'Thiago' (Admin)
+      if (!users.find(u => u.username === 'Thiago')) {
+           const thiago: User = {
+              id: 'user_thiago_admin',
+              username: 'Thiago',
+              password: '123', // Senha padrão caso precise logar manualmente
+              role: 'admin'
+           };
+           await this.saveUser(thiago);
+           console.log("Conta 'Thiago' (Admin) criada com sucesso.");
+      }
+  }
+
   async register(username: string, password: string, role: string): Promise<User> {
     const users = await this.listUsers();
     if (users.find(u => u.username === username)) {
@@ -148,7 +173,7 @@ class DatabaseService {
       id: Date.now().toString(),
       username,
       role: role as any,
-      password // In a real app, this should be hashed
+      password 
     };
 
     await this.saveUser(newUser);
@@ -157,7 +182,8 @@ class DatabaseService {
 
   async login(username: string, password: string): Promise<User> {
     const users = await this.listUsers();
-    const user = users.find(u => u.username === username && u.password === password);
+    // Busca case-insensitive para o username
+    const user = users.find(u => u.username.toLowerCase() === username.toLowerCase() && u.password === password);
     if (!user) {
       throw new Error("Credenciais inválidas.");
     }

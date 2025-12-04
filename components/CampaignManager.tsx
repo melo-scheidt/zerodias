@@ -41,6 +41,19 @@ export const CampaignManager: React.FC<CampaignManagerProps> = ({ currentCampaig
       }
   };
 
+  const handleKickPlayer = (playerId: string, playerName: string) => {
+      if (!currentCampaign) return;
+      
+      if (confirm(`CONFIRMAÇÃO DE EXPURGO:\n\nDeseja remover "${playerName}" da sessão atual?`)) {
+          const updatedJogadores = currentCampaign.jogadores.filter(j => j.id !== playerId);
+          const updatedCampaign: Campanha = {
+              ...currentCampaign,
+              jogadores: updatedJogadores
+          };
+          setCurrentCampaign(updatedCampaign);
+      }
+  };
+
   // Se por algum motivo de delay o currentCampaign for null (segundos iniciais), mostra carregando
   if (!currentCampaign) {
       return (
@@ -144,15 +157,28 @@ export const CampaignManager: React.FC<CampaignManagerProps> = ({ currentCampaig
                 </div>
                 <div className="flex-1 p-3 space-y-2 overflow-y-auto custom-scrollbar">
                     {currentCampaign.jogadores.map(jogador => (
-                        <div key={jogador.id} className="flex items-center gap-3 p-3 bg-zinc-950/50 hover:bg-zinc-800/50 rounded border border-zinc-800/50 hover:border-ordem-gold/30 transition-all group">
+                        <div key={jogador.id} className="flex items-center gap-3 p-3 bg-zinc-950/50 hover:bg-zinc-800/50 rounded border border-zinc-800/50 hover:border-ordem-gold/30 transition-all group relative">
                             <div className={`w-2 h-2 rounded-full ${jogador.status === 'Online' ? 'bg-green-500 shadow-[0_0_5px_#22c55e]' : 'bg-zinc-600'}`}></div>
                             <div className="flex-1">
-                                <div className="text-sm text-zinc-200 font-mono font-bold group-hover:text-ordem-gold flex justify-between">
-                                    {jogador.nome} 
-                                    {jogador.isMestre && <span className="text-ordem-gold text-[10px] border border-ordem-gold/50 px-1 rounded ml-2">MESTRE</span>}
+                                <div className="text-sm text-zinc-200 font-mono font-bold group-hover:text-ordem-gold flex justify-between items-center">
+                                    <span>
+                                        {jogador.nome} 
+                                        {jogador.isMestre && <span className="text-ordem-gold text-[10px] border border-ordem-gold/50 px-1 rounded ml-2">MESTRE</span>}
+                                    </span>
                                 </div>
                                 <div className="text-[10px] text-zinc-500 uppercase">{jogador.classe}</div>
                             </div>
+                            
+                            {/* Botão de Kick (Apenas Admin) */}
+                            {currentUser.role === 'admin' && (
+                                <button 
+                                    onClick={() => handleKickPlayer(jogador.id, jogador.nome)}
+                                    className="opacity-0 group-hover:opacity-100 text-zinc-600 hover:text-red-500 transition-opacity p-2"
+                                    title="Remover da Mesa"
+                                >
+                                    <Icons.Trash />
+                                </button>
+                            )}
                         </div>
                     ))}
                     {currentCampaign.jogadores.length === 0 && (

@@ -28,7 +28,16 @@ Um deles presencia um acidente bizarro, como um carro que some em uma estrada e 
 
 Com a expansão da Fenda, rachaduras na realidade liberam entidades que misturam passado e presente, como visões de antepassados ou objetos do futuro aparecendo, escalando a ameaça.`,
     dataCriacao: Date.now(),
-    jogadores: [],
+    jogadores: [
+        // Garante Isadora na definição base
+        {
+            id: 'user_isadora_01',
+            nome: 'Isadora',
+            classe: Classe.ESPECIALISTA, // Classe padrão
+            isMestre: false,
+            status: 'Offline'
+        }
+    ],
     mapState: {
         bgImage: null,
         tokens: [],
@@ -193,8 +202,6 @@ const App: React.FC = () => {
       
       if (campaign) {
           // Se encontrou algo no banco, SOBRESCREVE a lore para garantir que é a missão certa
-          // Isso corrige o problema do usuário "ser redirecionado para missão aleatória"
-          // mantendo apenas os dados de jogadores e mapa que vieram do banco.
           campaign = enforceOfficialLore(campaign);
       } else {
           // Se não existir, cria a oficial do zero
@@ -202,7 +209,21 @@ const App: React.FC = () => {
           campaign = { ...OFFICIAL_MISSION_DATA };
       }
 
-      // Adiciona o usuário atual à lista se não estiver
+      // --- INJEÇÃO AUTOMÁTICA DE MEMBROS DA EQUIPE ---
+      
+      // 1. Garante que ISADORA esteja na lista (mesmo que não esteja logada)
+      const isadoraId = 'user_isadora_01';
+      if (!campaign.jogadores.find(j => j.id === isadoraId)) {
+          campaign.jogadores.push({
+              id: isadoraId,
+              nome: 'Isadora',
+              classe: Classe.ESPECIALISTA, // Classe Padrão
+              isMestre: false,
+              status: 'Offline'
+          });
+      }
+
+      // 2. Adiciona o usuário ATUAL (quem está logando agora) se não estiver
       if (!campaign.jogadores.find(j => j.id === currentUser?.id)) {
           campaign.jogadores.push({
               id: currentUser!.id,
@@ -211,10 +232,14 @@ const App: React.FC = () => {
               isMestre: currentUser!.role === 'admin',
               status: 'Online'
           });
+      } else {
+          // Se já estiver, atualiza para Online
+          campaign.jogadores = campaign.jogadores.map(j => 
+             j.id === currentUser!.id ? { ...j, status: 'Online' } : j
+          );
       }
 
       // Se for admin, salva no banco para persistir a correção para todos
-      // Isso "conserta" o banco caso ele estivesse com dados errados
       if (currentUser?.role === 'admin') {
           await db.saveCampaign(campaign);
       }
