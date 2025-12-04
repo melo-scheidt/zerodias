@@ -7,9 +7,7 @@ import { LibraryDocument } from '../types';
 export const PdfLibrary: React.FC = () => {
   const [documents, setDocuments] = useState<LibraryDocument[]>([]);
   const [selectedDoc, setSelectedDoc] = useState<LibraryDocument | null>(null);
-  const [showAddModal, setShowAddModal] = useState(false);
-  const [newLinkTitle, setNewLinkTitle] = useState('');
-  const [newLinkUrl, setNewLinkUrl] = useState('');
+  const [isUploading, setIsUploading] = useState(false);
 
   useEffect(() => {
     loadDocuments();
@@ -17,46 +15,66 @@ export const PdfLibrary: React.FC = () => {
 
   const loadDocuments = async () => {
     const docs = await db.listDocuments();
-    setDocuments(docs);
-  };
-
-  const handleAddLink = async () => {
-    if (!newLinkTitle || !newLinkUrl) return;
-    const newDoc: LibraryDocument = {
-      id: Date.now().toString(),
-      title: newLinkTitle,
-      url: newLinkUrl,
-      type: 'link'
-    };
-    await db.saveDocument(newDoc);
-    setDocuments(prev => [...prev, newDoc]);
-    setShowAddModal(false);
-    setNewLinkTitle('');
-    setNewLinkUrl('');
+    // Filter to show only local files (uploads), effectively removing "links" from view if they exist in DB
+    setDocuments(docs.filter(d => d.type === 'local'));
   };
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file && file.type === 'application/pdf') {
-      const url = URL.createObjectURL(file);
-      const tempDoc: LibraryDocument = {
-        id: 'temp-' + Date.now(),
-        title: file.name + ' (Sessão Atual)',
-        url: url,
-        type: 'local'
-      };
-      // Documentos locais não são salvos no banco para economizar espaço,
-      // mas são adicionados à lista da sessão atual
-      setDocuments(prev => [tempDoc, ...prev]);
-      setSelectedDoc(tempDoc);
-    } else {
+    if (!file) return;
+
+    if (file.type !== 'application/pdf') {
       alert("Por favor selecione um arquivo PDF válido.");
+      return;
     }
+
+    // Limite de 500MB conforme solicitado
+    const MAX_SIZE = 500 * 1024 * 1024; // 500 MB
+    if (file.size > MAX_SIZE) {
+        alert("Arquivo muito grande. O limite máximo é 500MB.");
+        return;
+    }
+
+    setIsUploading(true);
+    const reader = new FileReader();
+    
+    reader.onload = async (ev) => {
+        try {
+            const base64Url = ev.target?.result as string;
+            
+            const newDoc: LibraryDocument = {
+                id: Date.now().toString(),
+                title: file.name,
+                url: base64Url,
+                type: 'local'
+            };
+
+            // Salva no banco de dados (Persistência)
+            await db.saveDocument(newDoc);
+            
+            setDocuments(prev => [newDoc, ...prev]);
+            setSelectedDoc(newDoc);
+            alert("PDF salvo no banco de dados com sucesso!");
+
+        } catch (error) {
+            console.error("Erro ao processar PDF:", error);
+            alert("Erro ao salvar o arquivo. Tente novamente ou verifique sua conexão.");
+        } finally {
+            setIsUploading(false);
+        }
+    };
+
+    reader.onerror = () => {
+        alert("Erro ao ler o arquivo.");
+        setIsUploading(false);
+    };
+
+    reader.readAsDataURL(file);
   };
 
   const handleDelete = async (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    if (confirm("Remover este documento da biblioteca?")) {
+    if (confirm("Remover este documento da biblioteca? Isso apagará para todos.")) {
       await db.deleteDocument(id);
       setDocuments(prev => prev.filter(d => d.id !== id));
       if (selectedDoc?.id === id) setSelectedDoc(null);
@@ -72,22 +90,17 @@ export const PdfLibrary: React.FC = () => {
            <h2 className="text-xl font-display text-white tracking-widest uppercase text-glow flex items-center gap-3">
              <Icons.Pdf /> Biblioteca de Documentos
            </h2>
-           <p className="font-mono text-[10px] text-zinc-500">ARQUIVOS CONFIDENCIAIS E MANUAIS</p>
+           <p className="font-mono text-[10px] text-zinc-500">ARQUIVOS CONFIDENCIAIS E MANUAIS (MÁX 500MB)</p>
         </div>
         
         <div className="flex gap-2">
-           <label className="flex items-center gap-2 bg-zinc-900 border border-zinc-700 hover:border-ordem-gold px-3 py-1.5 rounded cursor-pointer transition-colors group">
-              <input type="file" accept="application/pdf" className="hidden" onChange={handleFileUpload} />
+           <label className={`flex items-center gap-2 bg-zinc-900 border border-zinc-700 hover:border-ordem-gold px-3 py-1.5 rounded cursor-pointer transition-colors group ${isUploading ? 'opacity-50 cursor-wait' : ''}`}>
+              <input type="file" accept="application/pdf" className="hidden" onChange={handleFileUpload} disabled={isUploading} />
               <Icons.Upload />
-              <span className="text-xs font-mono text-zinc-400 group-hover:text-white uppercase">Abrir PDF Local</span>
+              <span className="text-xs font-mono text-zinc-400 group-hover:text-white uppercase">
+                  {isUploading ? 'Enviando...' : 'Upload PDF (Banco)'}
+              </span>
            </label>
-           
-           <button 
-             onClick={() => setShowAddModal(true)}
-             className="flex items-center gap-2 bg-ordem-blood/20 border border-ordem-blood text-ordem-red hover:bg-ordem-blood hover:text-white px-3 py-1.5 rounded transition-colors text-xs font-mono uppercase"
-           >
-             <Icons.Sparkles /> Adicionar Link
-           </button>
         </div>
       </div>
 
@@ -110,13 +123,12 @@ export const PdfLibrary: React.FC = () => {
                >
                  <div className="flex items-center gap-2 overflow-hidden">
                    <Icons.FileText />
-                   <div className="truncate text-xs font-mono">{doc.title}</div>
+                   <div className="truncate text-xs font-mono" title={doc.title}>{doc.title}</div>
                  </div>
-                 {doc.type === 'link' && (
-                    <button onClick={(e) => handleDelete(doc.id, e)} className="opacity-0 group-hover:opacity-100 text-zinc-600 hover:text-red-500">
-                      <Icons.Trash />
-                    </button>
-                 )}
+                 {/* Botão de deletar disponível para limpar banco */}
+                 <button onClick={(e) => handleDelete(doc.id, e)} className="opacity-0 group-hover:opacity-100 text-zinc-600 hover:text-red-500">
+                    <Icons.Trash />
+                 </button>
                </div>
              ))}
            </div>
@@ -128,9 +140,6 @@ export const PdfLibrary: React.FC = () => {
             <>
                <div className="bg-zinc-950 border-b border-zinc-800 p-2 flex justify-between items-center">
                   <span className="text-xs font-mono text-zinc-300 truncate">{selectedDoc.title}</span>
-                  <a href={selectedDoc.url} target="_blank" rel="noopener noreferrer" className="text-[10px] text-ordem-gold hover:underline flex items-center gap-1">
-                     Abrir em nova aba <Icons.Send />
-                  </a>
                </div>
                <iframe 
                  src={selectedDoc.url} 
@@ -146,40 +155,6 @@ export const PdfLibrary: React.FC = () => {
           )}
         </div>
       </div>
-
-      {/* Add Link Modal */}
-      {showAddModal && (
-        <div className="absolute inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-           <div className="bg-ordem-panel border border-ordem-gold p-6 rounded shadow-2xl w-full max-w-md animate-in zoom-in-95">
-              <h3 className="font-display text-lg text-white mb-4">Adicionar Link Externo</h3>
-              <div className="space-y-4">
-                 <div>
-                    <label className="text-xs font-mono text-zinc-500">Nome do Arquivo</label>
-                    <input 
-                      className="w-full bg-black border border-zinc-700 p-2 text-white focus:border-ordem-gold outline-none"
-                      value={newLinkTitle}
-                      onChange={e => setNewLinkTitle(e.target.value)}
-                      placeholder="Ex: Livro de Regras"
-                    />
-                 </div>
-                 <div>
-                    <label className="text-xs font-mono text-zinc-500">URL do PDF</label>
-                    <input 
-                      className="w-full bg-black border border-zinc-700 p-2 text-white focus:border-ordem-gold outline-none"
-                      value={newLinkUrl}
-                      onChange={e => setNewLinkUrl(e.target.value)}
-                      placeholder="https://..."
-                    />
-                    <p className="text-[10px] text-zinc-600 mt-1">* Links do Google Drive podem precisar de permissão de visualização pública.</p>
-                 </div>
-                 <div className="flex justify-end gap-2 pt-2">
-                    <button onClick={() => setShowAddModal(false)} className="px-4 py-2 text-xs text-zinc-400 hover:text-white">Cancelar</button>
-                    <button onClick={handleAddLink} className="bg-ordem-gold text-black px-4 py-2 rounded font-bold text-xs uppercase hover:bg-yellow-600">Salvar</button>
-                 </div>
-              </div>
-           </div>
-        </div>
-      )}
 
     </div>
   );

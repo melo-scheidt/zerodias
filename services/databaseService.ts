@@ -430,9 +430,16 @@ class DatabaseService {
   }
 
   async saveDocument(doc: LibraryDocument): Promise<void> {
-    const localDocs = await this.listDocumentsLocal();
-    localDocs.push(doc);
-    localStorage.setItem(KEYS.LIBRARY, JSON.stringify(localDocs));
+    // Tenta salvar localmente, mas se for muito grande (PDF Base64), ignora erro e foca na nuvem
+    try {
+        const localDocs = await this.listDocumentsLocal();
+        // Remove versão anterior se existir
+        const filteredDocs = localDocs.filter(d => d.id !== doc.id);
+        filteredDocs.push(doc);
+        localStorage.setItem(KEYS.LIBRARY, JSON.stringify(filteredDocs));
+    } catch (e) {
+        console.warn("PDF muito grande para LocalStorage. Tentando salvar apenas na Nuvem.");
+    }
 
     if (this.isOnline && this.supabase) {
       await this.supabase.from('documents').upsert({
