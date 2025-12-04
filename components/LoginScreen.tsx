@@ -151,7 +151,6 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
                       className="w-full bg-black border border-ordem-red/50 p-3 text-ordem-red focus:border-ordem-red outline-none"
                       placeholder="Chave de Segurança"
                     />
-                    <p className="text-[10px] text-zinc-600 mt-1">* Chave de Acesso do Desenvolvedor (orate_studio).</p>
                   </div>
                 )}
               </div>

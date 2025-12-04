@@ -88,32 +88,35 @@ const App: React.FC = () => {
     }
   }, [currentUser]);
 
-  // Realtime Subscription (Prioridade 1: Rápido)
+  // Realtime Subscription (Prioridade 1: Rápido e Dinâmico)
   useEffect(() => {
       // Se houver uma campanha carregada, inscreve-se para ouvir mudanças
-      // Mesmo que o ID mude, a subscrição deve atualizar
-      if (db.isOnline) {
-          // O ID aqui é apenas para referência no log, pois o databaseService 
-          // está configurado para ouvir o ID 'current_campaign' fixo para simplificação
-          db.subscribeToCampaign('current_campaign', (updatedCampaign) => {
-              console.log("[App] Recebida atualização Realtime da campanha", updatedCampaign);
-              setCurrentCampaign(updatedCampaign);
+      // Importante: Ouve o ID específico da campanha atual, não 'current_campaign' estático
+      if (db.isOnline && currentCampaign?.id) {
+          db.subscribeToCampaign(currentCampaign.id, (updatedCampaign) => {
+              console.log(`[App] Recebida atualização Realtime da campanha ${currentCampaign.id}`, updatedCampaign);
+              // Atualiza o estado apenas se os dados forem relevantes
+              setCurrentCampaign(prev => {
+                  if (prev?.id === updatedCampaign.id) return updatedCampaign;
+                  return prev;
+              });
           });
       }
       
       return () => {
-         // Opcional: Desinscrever ao desmontar, mas db.disconnect() já faz isso no logout
+         // Opcional: Desinscrever ao desmontar ou trocar de campanha
       };
-  }, [currentUser]); // Re-executa se o usuário mudar (login/logout)
+  }, [currentCampaign?.id, currentUser]); // Re-executa se o ID da campanha mudar
 
   // Polling Falback (Prioridade 2: Garantia a cada 3s)
   useEffect(() => {
     // Apenas jogadores fazem polling. O Mestre é a fonte da verdade local, 
     // mas o Realtime deve ser suficiente. Isso é backup.
-    if (!currentUser || currentUser.role === 'admin') return;
+    if (!currentUser || currentUser.role === 'admin' || !currentCampaign?.id) return;
 
     const intervalId = setInterval(async () => {
         if (db.isOnline) {
+            // Busca especificamente pelo ID da campanha atual
             const latest = await db.getCampaign();
             if (latest) {
                 setCurrentCampaign(prev => {
@@ -129,7 +132,7 @@ const App: React.FC = () => {
     }, 3000);
 
     return () => clearInterval(intervalId);
-  }, [currentUser]);
+  }, [currentUser, currentCampaign?.id]);
 
   const loadData = async () => {
       // Carrega TODOS os agentes do banco (sem filtro de ID)
@@ -158,17 +161,9 @@ const App: React.FC = () => {
          setAgente(initial);
       }
 
-      const campaign = await db.getCampaign();
-      setCurrentCampaign(campaign);
-  };
-
-  const handleRefreshCampaign = async () => {
-      const updatedCampaign = await db.getCampaign();
-      if (updatedCampaign) {
-          setCurrentCampaign(updatedCampaign);
-          return updatedCampaign;
-      }
-      return null;
+      // Ao carregar, não puxamos campanha automaticamente para não forçar sala errada.
+      // O usuário deve entrar via código ou criar nova.
+      setCurrentCampaign(null);
   };
 
   // Auto-Save Agent

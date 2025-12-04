@@ -11,8 +11,8 @@ const KEYS = {
 };
 
 // Credenciais fornecidas
-const DEFAULT_SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || "";
-const DEFAULT_SUPABASE_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || "";
+const DEFAULT_SUPABASE_URL = "https://ndhdrsqiunxynmgojmha.supabase.co";
+const DEFAULT_SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5kaGRyc3FpdW54eW5tZ29qbWhhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjQ2MjQwNzMsImV4cCI6MjA4MDIwMDA3M30.Hi7voWo2271XGYcKSDn3vqg58zZ6F5KqMbCPW0-px9U";
 
 class DatabaseService {
   private supabase: SupabaseClient | null = null;
@@ -33,19 +33,14 @@ class DatabaseService {
           const { url, key } = JSON.parse(creds);
           await this.connect(url, key);
       } else {
-          // 2. Conexão automática com as chaves padrão (se existirem)
-          if (DEFAULT_SUPABASE_URL && DEFAULT_SUPABASE_KEY) {
-              console.log("Inicializando conexão padrão com Supabase...");
-              await this.connect(DEFAULT_SUPABASE_URL, DEFAULT_SUPABASE_KEY);
-          }
+          // 2. Conexão automática com as chaves padrão
+          console.log("Inicializando conexão padrão com Supabase...");
+          await this.connect(DEFAULT_SUPABASE_URL, DEFAULT_SUPABASE_KEY);
       }
   }
 
   public async connectDefault(): Promise<{ success: boolean; error?: string }> {
-      if (DEFAULT_SUPABASE_URL && DEFAULT_SUPABASE_KEY) {
-          return this.connect(DEFAULT_SUPABASE_URL, DEFAULT_SUPABASE_KEY);
-      }
-      return { success: false, error: "Credenciais Supabase não configuradas." };
+      return this.connect(DEFAULT_SUPABASE_URL, DEFAULT_SUPABASE_KEY);
   }
 
   public async connect(url: string, key: string): Promise<{ success: boolean; error?: string }> {
