@@ -69,7 +69,7 @@ Documentação de todas as alterações realizadas
 ## 📦 Estrutura Final do Projeto
 
 ```
-ordem-vercel-v3/
+ordem-vercel-v4/
 ├── components/              # Componentes React (sem alterações)
 ├── services/               # Serviços (sem alterações)
 ├── App.tsx                # Componente principal (sem alterações)
@@ -173,4 +173,4 @@ O projeto está 100% pronto para deploy no Vercel! Todas as configurações nece
 
 ## 📌 Versão
 
-Esta é a **versão 3** do projeto adaptado para Vercel, baseada no arquivo `o-outro-lado---ordem-companion(18).zip`.
+Esta é a **versão 4** do projeto adaptado para Vercel, baseada no arquivo `o-outro-lado---ordem-companion(19).zip`.

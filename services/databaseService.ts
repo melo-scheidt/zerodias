@@ -11,8 +11,8 @@ const KEYS = {
 };
 
 // Credenciais fornecidas
-const DEFAULT_SUPABASE_URL = "https://ndhdrsqiunxynmgojmha.supabase.co";
-const DEFAULT_SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5kaGRyc3FpdW54eW5tZ29qbWhhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjQ2MjQwNzMsImV4cCI6MjA4MDIwMDA3M30.Hi7voWo2271XGYcKSDn3vqg58zZ6F5KqMbCPW0-px9U";
+export const DEFAULT_SUPABASE_URL = "https://ndhdrsqiunxynmgojmha.supabase.co";
+export const DEFAULT_SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5kaGRyc3FpdW54eW5tZ29qbWhhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjQ2MjQwNzMsImV4cCI6MjA4MDIwMDA3M30.Hi7voWo2271XGYcKSDn3vqg58zZ6F5KqMbCPW0-px9U";
 
 class DatabaseService {
   private supabase: SupabaseClient | null = null;
@@ -55,7 +55,7 @@ class DatabaseService {
               },
           });
           
-          // TESTE REAL DE CONEXÃO
+          // TESTE BÁSICO DE CONEXÃO (LEITURA)
           const { error } = await tempClient
               .from('documents')
               .select('id')
@@ -69,7 +69,10 @@ class DatabaseService {
               if (error.code === '401' || error.message?.includes('JWT')) {
                   return { success: false, error: "Chave de API inválida." };
               }
-              // Tenta prosseguir mesmo com erro, assumindo que pode ser RLS ou tabela vazia
+              // Retorna sucesso parcial se for apenas tabela vazia, mas falha se for erro de rede
+              if (!error.message?.includes('JSON object requested')) {
+                 return { success: false, error: error.message };
+              }
           }
 
           this.supabase = tempClient;
@@ -84,7 +87,44 @@ class DatabaseService {
       } catch (e: any) {
           console.error("Exceção na conexão:", e);
           this.isOnline = false;
-          return { success: false, error: "Erro de rede." };
+          return { success: false, error: "Erro de rede ou configuração." };
+      }
+  }
+
+  // Método de diagnóstico completo para garantir integridade dos dados
+  public async testConnectivity(): Promise<{ success: boolean; log: string[] }> {
+      if (!this.supabase) return { success: false, log: ["Cliente Supabase não inicializado."] };
+      
+      const log: string[] = [];
+      log.push("Iniciando diagnóstico de integridade...");
+
+      try {
+          // 1. Teste de Leitura
+          const { data, error: readError } = await this.supabase.from('documents').select('count').limit(1);
+          if (readError) throw new Error(`Falha na Leitura: ${readError.message} (Verifique RLS)`);
+          log.push("✔ Leitura de dados: OK");
+
+          // 2. Teste de Escrita (Ping)
+          const pingId = `ping_${Date.now()}`;
+          const { error: writeError } = await this.supabase.from('documents').insert({
+              id: pingId,
+              collection: 'system_health_check',
+              data: { status: 'ok', timestamp: Date.now() }
+          });
+          if (writeError) throw new Error(`Falha na Escrita: ${writeError.message} (Verifique RLS)`);
+          log.push("✔ Escrita de dados: OK");
+
+          // 3. Teste de Exclusão (Limpeza)
+          const { error: deleteError } = await this.supabase.from('documents').delete().eq('id', pingId);
+          if (deleteError) throw new Error(`Falha na Exclusão: ${deleteError.message}`);
+          log.push("✔ Permissões de exclusão: OK");
+          
+          log.push("✔ DIAGNÓSTICO CONCLUÍDO: Conexão Estável.");
+          return { success: true, log };
+
+      } catch (e: any) {
+          log.push(`❌ ERRO CRÍTICO: ${e.message}`);
+          return { success: false, log };
       }
   }
 

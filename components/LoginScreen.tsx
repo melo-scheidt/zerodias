@@ -1,7 +1,7 @@
 
 import React, { useState } from 'react';
 import { User, UserRole } from '../types';
-import { db } from '../services/databaseService';
+import { db, DEFAULT_SUPABASE_URL, DEFAULT_SUPABASE_KEY } from '../services/databaseService';
 import { Icons } from '../constants';
 
 interface LoginScreenProps {
@@ -16,6 +16,12 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
   const [adminKey, setAdminKey] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  
+  // Estado para conexão manual (Preenchido com dados do prompt)
+  const [showServerConfig, setShowServerConfig] = useState(false);
+  const [serverUrl, setServerUrl] = useState(DEFAULT_SUPABASE_URL);
+  const [serverKey, setServerKey] = useState(DEFAULT_SUPABASE_KEY);
+  const [connectionLogs, setConnectionLogs] = useState<string[]>([]);
 
   // Chave secreta para criar conta de Mestre/Admin
   const MASTER_KEY_REQUIRED = "orate_studio";
@@ -45,24 +51,41 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
     }
   };
 
-  const handleCloudConnect = async () => {
+  const handleManualConnect = async () => {
     setLoading(true);
+    setConnectionLogs(["Iniciando protocolo de conexão manual..."]);
+    setError('');
+
     try {
-        const res = await db.connectDefault();
+        // 1. Conecta
+        const res = await db.connect(serverUrl, serverKey);
+        
         if (res.success) {
-            alert("✔ CONEXÃO ESTABELECIDA COM SUPABASE.\nO sistema está online e sincronizado.");
+            setConnectionLogs(prev => [...prev, "✔ Autenticação de cliente: OK"]);
+            
+            // 2. Executa diagnóstico profundo (Leitura/Escrita)
+            const diag = await db.testConnectivity();
+            setConnectionLogs(prev => [...prev, ...diag.log]);
+
+            if (diag.success) {
+               alert("SISTEMA ONLINE.\nTodas as verificações de segurança passaram.");
+               setShowServerConfig(false); // Fecha o painel se der tudo certo
+            } else {
+               setError("Falha nos testes de permissão (Ver Log).");
+            }
         } else {
-            setError(`Falha na conexão: ${res.error}`);
+            setError(`Falha na conexão inicial: ${res.error}`);
+            setConnectionLogs(prev => [...prev, `❌ ERRO: ${res.error}`]);
         }
-    } catch (e) {
-        setError("Erro crítico ao tentar conectar ao banco de dados.");
+    } catch (e: any) {
+        setError(`Erro crítico: ${e.message}`);
     } finally {
         setLoading(false);
     }
   };
 
   return (
-    <div className="flex flex-col items-center justify-center min-h-screen w-full bg-black relative overflow-hidden font-mono z-50">
+    <div className="flex flex-col items-center justify-center min-h-screen w-full bg-black relative overflow-hidden font-mono z-50 py-10">
       
       {/* Background Ambience */}
       <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-10 pointer-events-none"></div>
@@ -77,7 +100,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
              <span className="text-4xl font-display text-ordem-gold">OP</span>
           </div>
           <h1 className="text-2xl font-display text-white tracking-[0.3em] uppercase text-glow">Ordem Paranormal</h1>
-          <p className="text-xs text-zinc-600 mt-2 tracking-widest">SISTEMA COMPANION v2.0</p>
+          <p className="text-xs text-zinc-600 mt-2 tracking-widest">SISTEMA COMPANION v2.1</p>
         </div>
 
         {/* Login Box */}
@@ -178,20 +201,60 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
 
         </div>
         
-        {/* Cloud Connect Section */}
+        {/* Server Config Toggle */}
         <div className="mt-8 w-full flex flex-col items-center">
             <button 
-                onClick={handleCloudConnect}
-                disabled={loading}
-                className="group relative w-full bg-zinc-950 border border-zinc-800 hover:border-ordem-gold/50 p-4 rounded text-center transition-all hover:bg-zinc-900"
+                onClick={() => setShowServerConfig(!showServerConfig)}
+                className="text-[10px] text-zinc-600 hover:text-white uppercase tracking-widest border-b border-transparent hover:border-zinc-500 transition-colors pb-1"
             >
-                <div className="flex items-center justify-center gap-2 text-xs text-zinc-500 group-hover:text-ordem-gold font-mono uppercase tracking-widest">
-                   {loading ? <span className="animate-spin">⟳</span> : <Icons.Cloud />}
-                   {loading ? 'CONECTANDO...' : 'SINCRONIZAR COM SUPABASE'}
-                </div>
-                {!loading && <div className="text-[9px] text-zinc-700 mt-1">Forçar conexão com banco de dados remoto</div>}
+                {showServerConfig ? '▲ Ocultar Configuração de Servidor' : '▼ Configuração Manual de Servidor'}
             </button>
         </div>
+
+        {/* Manual Server Configuration Panel */}
+        {showServerConfig && (
+            <div className="mt-4 w-full bg-zinc-950 border border-zinc-800 p-4 rounded animate-in slide-in-from-top-4">
+                <div className="space-y-3">
+                    <div>
+                        <label className="block text-[10px] text-zinc-500 uppercase mb-1">Project URL</label>
+                        <input 
+                            type="text" 
+                            value={serverUrl}
+                            onChange={e => setServerUrl(e.target.value)}
+                            className="w-full bg-black border border-zinc-700 p-2 text-zinc-300 text-[10px] font-mono focus:border-ordem-gold outline-none"
+                        />
+                    </div>
+                    <div>
+                        <label className="block text-[10px] text-zinc-500 uppercase mb-1">API Key (Anon)</label>
+                        <input 
+                            type="password" 
+                            value={serverKey}
+                            onChange={e => setServerKey(e.target.value)}
+                            className="w-full bg-black border border-zinc-700 p-2 text-zinc-300 text-[10px] font-mono focus:border-ordem-gold outline-none"
+                        />
+                    </div>
+                    
+                    {connectionLogs.length > 0 && (
+                        <div className="bg-black p-2 border border-zinc-800 h-24 overflow-y-auto custom-scrollbar">
+                            {connectionLogs.map((log, i) => (
+                                <div key={i} className={`text-[9px] font-mono mb-1 ${log.includes('ERRO') || log.includes('Falha') ? 'text-red-500' : 'text-green-500'}`}>
+                                    {log}
+                                </div>
+                            ))}
+                        </div>
+                    )}
+
+                    <button 
+                        onClick={handleManualConnect}
+                        disabled={loading}
+                        className="w-full bg-zinc-800 hover:bg-zinc-700 text-white text-xs uppercase py-2 rounded border border-zinc-700 hover:border-white transition-colors flex items-center justify-center gap-2"
+                    >
+                         {loading ? <span className="animate-spin">⟳</span> : <Icons.Cloud />}
+                         Testar Conexão Completa (RW)
+                    </button>
+                </div>
+            </div>
+        )}
 
         <div className="text-center mt-8 text-[10px] text-zinc-800 font-mono">
            <p>CONEXÃO SEGURA // CRIPTOGRAFIA ATIVADA</p>
