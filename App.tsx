@@ -256,12 +256,12 @@ const App: React.FC = () => {
       { id: 'mapa', label: 'Tático', icon: Icons.Map },
       { id: 'regras', label: 'Arquivos', icon: Icons.Book },
       { id: 'pdfs', label: 'Biblioteca', icon: Icons.Pdf },
+      { id: 'config', label: 'Configurações', icon: Icons.Settings },
   ];
 
   // Adiciona itens restritos apenas para Admins
   if (currentUser.role === 'admin') {
       menuItems.push({ id: 'ia', label: 'C.R.I.S.', icon: Icons.Ghost });
-      menuItems.push({ id: 'config', label: 'Configurações', icon: Icons.Settings });
   }
 
   return (
@@ -366,6 +366,9 @@ const App: React.FC = () => {
               {activeTab === 'pdfs' && (
                   <PdfLibrary currentUser={currentUser} />
               )}
+              {activeTab === 'config' && (
+                  <Settings />
+              )}
               
               {/* Admin Only Tabs */}
               {activeTab === 'ia' && currentUser.role === 'admin' && (
@@ -374,9 +377,6 @@ const App: React.FC = () => {
                       onDeleteAgent={handleDeleteAgent}
                       onAddAgent={handleAddAgent}
                   />
-              )}
-              {activeTab === 'config' && currentUser.role === 'admin' && (
-                  <Settings />
               )}
           </div>
       </main>

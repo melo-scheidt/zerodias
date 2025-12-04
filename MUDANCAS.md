@@ -69,7 +69,7 @@ Documentação de todas as alterações realizadas
 ## 📦 Estrutura Final do Projeto
 
 ```
-ordem-vercel/
+ordem-vercel-v2/
 ├── components/              # Componentes React (sem alterações)
 │   ├── CampaignManager.tsx
 │   ├── CharacterGallery.tsx
@@ -94,7 +94,7 @@ ordem-vercel/
 ├── metadata.json         # Metadados (sem alterações)
 ├── vite.config.ts        # ✏️ MODIFICADO
 ├── vercel.json           # ✨ NOVO
-├── .gitignore            # ✨ NOVO
+├── .gitignore            # ✨ ATUALIZADO
 ├── .env.example          # ✨ NOVO
 ├── .vercelignore         # ✨ NOVO
 ├── .npmrc                # ✨ NOVO
@@ -182,3 +182,7 @@ Antes de fazer o deploy, verifique:
 ## 🎉 Conclusão
 
 O projeto está 100% pronto para deploy no Vercel! Todas as configurações necessárias foram adicionadas e testadas. Basta seguir as instruções no `DEPLOY.md` e sua aplicação estará online em minutos.
+
+## 📌 Versão
+
+Esta é a **versão 2** do projeto adaptado para Vercel, baseada no arquivo `o-outro-lado---ordem-companion(15).zip`.
