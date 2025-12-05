@@ -74,11 +74,13 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
                setError("Falha nos testes de permissão (Ver Log).");
             }
         } else {
-            setError(`Falha na conexão inicial: ${res.error}`);
-            setConnectionLogs(prev => [...prev, `❌ ERRO: ${res.error}`]);
+            const errorStr = typeof res.error === 'object' ? JSON.stringify(res.error) : res.error;
+            setError(`Falha na conexão inicial: ${errorStr}`);
+            setConnectionLogs(prev => [...prev, `❌ ERRO: ${errorStr}`]);
         }
     } catch (e: any) {
-        setError(`Erro crítico: ${e.message}`);
+        const safeError = e instanceof Error ? e.message : (typeof e === 'object' ? JSON.stringify(e) : String(e));
+        setError(`Erro crítico: ${safeError}`);
     } finally {
         setLoading(false);
     }
@@ -113,7 +115,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
           <form onSubmit={handleSubmit} className="space-y-5">
             
             {error && (
-              <div className="bg-red-900/20 border border-red-900/50 p-3 text-red-500 text-xs text-center uppercase tracking-wide animate-pulse">
+              <div className="bg-red-900/20 border border-red-900/50 p-3 text-red-500 text-xs text-center uppercase tracking-wide animate-pulse break-words">
                 ⚠ {error}
               </div>
             )}
